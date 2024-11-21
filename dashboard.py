@@ -1,3 +1,5 @@
+pip install --upgrade streamlit
+
 import os
 os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 
