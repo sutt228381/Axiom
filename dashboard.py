@@ -1,6 +1,6 @@
 import os
-os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
-os.environ["BROWSER"] = "none"
+os.environ["STREAMLIT_SERVER_HEADLESS"] = "false" #"true"
+os.environ["BROWSER"] = "chrome" #"none"
 import logging
 
 # Configure logging to write to a file
