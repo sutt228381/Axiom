@@ -2,6 +2,11 @@ import os
 os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 os.environ["BROWSER"] = "none"
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
