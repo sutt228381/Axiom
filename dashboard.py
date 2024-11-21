@@ -1,5 +1,5 @@
 import os
-os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
+os.environ["BROWSER"] = "chrome"
 
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
