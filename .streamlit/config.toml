@@ -3,5 +3,5 @@ headless = true
 port = 8501
 enableCORS = false
 
-[browser]
-browserCommand = "none"
+#[browser]
+#browserCommand = "none"
