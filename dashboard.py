@@ -4,15 +4,15 @@ os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import os
 import pickle
+from google.auth.transport.requests import Request
 
 # Define Gmail API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 # Authenticate Gmail API
 def authenticate_gmail():
-    token_file = 'token.pickle'
+    token_file = os.path.join(os.getcwd(), 'token.pickle')
     creds = None
 
     # Load existing token if available
@@ -41,6 +41,9 @@ def fetch_emails(service, query="label:inbox"):
     results = service.users().messages().list(userId='me', q=query).execute()
     messages = results.get('messages', [])
     email_data = []
+    if not messages:
+        st.write("No emails found.")
+        return email_data
     for msg in messages[:5]:  # Fetch only the first 5 emails
         email = service.users().messages().get(userId='me', id=msg['id']).execute()
         snippet = email.get('snippet', 'No content')  # Extract email snippet
@@ -63,11 +66,12 @@ if st.button("Fetch Emails"):
         service = authenticate_gmail()  # Authenticate Gmail API
         st.write("Fetching emails...")
         emails = fetch_emails(service)  # Fetch emails
-        st.write("Fetched Emails:")
-        for email in emails:
-            st.write(f"ID: {email['id']}")
-            st.write(f"Snippet: {email['snippet']}")
-            st.write("---")
+        if emails:
+            st.write("Fetched Emails:")
+            for email in emails:
+                st.write(f"**ID**: {email['id']}")
+                st.write(f"**Snippet**: {email['snippet']}")
+                st.write("---")
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
