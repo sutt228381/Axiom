@@ -1,3 +1,6 @@
+import os
+os.environ["BROWSER"] = "chrome"  # Or replace with "chrome" or your browser
+
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
