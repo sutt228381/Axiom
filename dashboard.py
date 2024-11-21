@@ -1,11 +1,20 @@
 import os
 os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 os.environ["BROWSER"] = "none"
-
 import logging
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+# Configure logging to write to a file
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),  # Log to a file named 'app.log'
+        logging.StreamHandler()         # Also output logs to the terminal
+    ]
+)
 logger = logging.getLogger(__name__)
+
+logger.info("App started successfully.")
 
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
