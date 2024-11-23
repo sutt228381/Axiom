@@ -24,7 +24,6 @@ st.write("Step 1: App started")
 
 def authenticate_gmail():
     """Authenticate with the Gmail API using headless flow."""
-    st.write("Step 2: Entering authenticate_gmail()")
     logger.info("Starting Gmail authentication...")
     token_file = 'token.pickle'
     creds = None
@@ -54,10 +53,13 @@ def authenticate_gmail():
                         "token_uri": st.secrets["gmail_token_uri"],
                         "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_x509_cert_url"],
                         "client_secret": st.secrets["gmail_client_secret"],
-                        "redirect_uris": [st.secrets["gmail_redirect_uris"]]
+                        "redirect_uris": st.secrets["gmail_redirect_uris"].split(",")
                     }
                 }
+
+                # Set up the OAuth flow
                 flow = InstalledAppFlow.from_client_config(credentials, SCOPES)
+                flow.redirect_uri = credentials["installed"]["redirect_uris"][0]  # Use the first redirect URI
                 auth_url, _ = flow.authorization_url(prompt='consent')
                 st.write("Step 5: Authorization URL generated")
                 st.write("Please go to this URL to authenticate:")
