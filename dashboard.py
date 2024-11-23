@@ -45,6 +45,7 @@ def authenticate_gmail():
         else:
             logger.info("Initiating OAuth flow...")
             try:
+                # Load credentials from Streamlit Secrets
                 credentials = {
                     "installed": {
                         "client_id": st.secrets["gmail_client_id"],
