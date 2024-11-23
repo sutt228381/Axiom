@@ -6,7 +6,6 @@ from googleapiclient.discovery import build
 import pickle
 from google.auth.transport.requests import Request
 from threading import Thread
-import time
 
 # Configure logging to write to a file and stream to the terminal
 logging.basicConfig(
@@ -73,7 +72,7 @@ def authenticate_gmail():
             try:
                 # Load credentials from Streamlit Secrets
                 flow = InstalledAppFlow.from_client_config(
-                    st.secrets["gmail_credentials"], SCOPES
+                    {"installed": st.secrets["gmail_credentials"]}, SCOPES
                 )
                 logger.info("Opening OAuth consent screen...")
                 creds = authenticate_with_timeout(flow, timeout=60)  # Thread-based timeout
