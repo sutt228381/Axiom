@@ -16,29 +16,35 @@ os.environ["NO_GCE_CHECK"] = "true"  # Avoid Compute Engine Metadata warnings
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 
-# Function to authenticate the user with OAuth
+# Authenticate the user using manual URL-based flow
 def authenticate_gmail():
     logger.info("Starting Gmail authentication...")
+
     flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
 
     try:
-        creds = flow.run_local_server(port=0)  # Dynamically select an available port
-        logger.info("OAuth consent completed successfully.")
+        # Generate the authorization URL
+        auth_url, _ = flow.authorization_url(prompt='consent')
+        st.info("Please click the link below to authorize access:")
+        st.write(f"[Authorize Gmail Access]({auth_url})")
+
+        # Input field for the authorization code
+        auth_code = st.text_input("Enter the authorization code after authorizing:")
+
+        # Handle the input and exchange the code for credentials
+        if auth_code:
+            creds = flow.fetch_token(code=auth_code)
+            logger.info("OAuth flow completed successfully.")
+            return flow.credentials
     except Exception as e:
-        logger.error("Error during OAuth consent flow: %s", e)
+        logger.error("Error during OAuth flow: %s", e)
+        st.error("An error occurred during authentication.")
         raise e
 
-    # Initialize Gmail API client
-    try:
-        service = build('gmail', 'v1', credentials=creds)
-        logger.info("Gmail API client initialized successfully.")
-        return service
-    except Exception as e:
-        logger.error("Error initializing Gmail API client: %s", e)
-        raise e
+    return None
 
 
-# Fetch emails dynamically
+# Fetch emails
 def fetch_emails(service, query="label:inbox"):
     logger.info("Fetching emails with query: %s", query)
     try:
@@ -69,14 +75,16 @@ st.write("A dashboard to view and analyze your Gmail data.")
 # Authenticate and fetch emails
 if st.button("Authenticate and Fetch Emails"):
     try:
-        service = authenticate_gmail()
-        emails = fetch_emails(service)
-        if emails:
-            st.write("Fetched Emails:")
-            for email in emails:
-                st.write(f"**ID**: {email['id']}")
-                st.write(f"**Snippet**: {email['snippet']}")
-                st.write("---")
+        creds = authenticate_gmail()
+        if creds:
+            service = build('gmail', 'v1', credentials=creds)
+            emails = fetch_emails(service)
+            if emails:
+                st.write("Fetched Emails:")
+                for email in emails:
+                    st.write(f"**ID**: {email['id']}")
+                    st.write(f"**Snippet**: {email['snippet']}")
+                    st.write("---")
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
