@@ -44,8 +44,21 @@ def authenticate_gmail():
             try:
                 flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
                 flow.redirect_uri = 'https://axiomgit-dppnbnhmqnccrv4xcjm3r3.streamlit.app/'
-                creds = flow.run_local_server(port=8080)  # Ensure port is free
-                logger.info("OAuth flow completed successfully.")
+                
+                # Use run_console() to avoid needing a browser
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.write("Go to the following URL, authorize the app, and paste the resulting code below:")
+                st.write(auth_url)
+
+                # Get user input for authorization code
+                auth_code = st.text_input("Enter the authorization code:", "")
+                if st.button("Submit Authorization Code"):
+                    creds = flow.fetch_token(code=auth_code)
+                    st.success("Authentication successful!")
+                    logger.info("Authentication successful.")
+                else:
+                    st.warning("Please enter the authorization code.")
+
             except Exception as e:
                 logger.error(f"Error during OAuth flow: {e}")
                 st.error(f"An error occurred during authentication: {e}")
