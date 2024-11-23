@@ -7,7 +7,7 @@ import pickle
 from google.auth.transport.requests import Request
 from logging.handlers import RotatingFileHandler
 
-# Function to clear the log file
+# Function to clear the log file #
 def clear_log_file():
     """Clear the log file at the start of the app."""
     with open("app.log", "w") as log_file:
