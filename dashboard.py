@@ -5,8 +5,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import pickle
 from google.auth.transport.requests import Request
-import json
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from threading import Thread
+import time
 
 # Configure logging to write to a file and stream to the terminal
 logging.basicConfig(
@@ -24,18 +24,31 @@ logger.info("App started successfully.")
 # Define Gmail API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
+
+class OAuthTimeoutException(Exception):
+    pass
+
+
 def authenticate_with_timeout(flow, timeout=60):
-    """Run the OAuth flow with a timeout."""
-    with ThreadPoolExecutor() as executor:
-        future = executor.submit(flow.run_local_server, port=0)
+    """Run the OAuth flow with a timeout using threading."""
+    result = {"creds": None, "error": None}
+
+    def run_flow():
         try:
-            creds = future.result(timeout=timeout)
-            return creds
-        except TimeoutError:
-            future.cancel()
-            raise TimeoutError("Authentication process timed out.")
+            result["creds"] = flow.run_local_server(port=0)
         except Exception as e:
-            raise e
+            result["error"] = e
+
+    thread = Thread(target=run_flow)
+    thread.start()
+    thread.join(timeout)
+
+    if thread.is_alive():
+        raise OAuthTimeoutException("Authentication process timed out.")
+    if result["error"]:
+        raise result["error"]
+    return result["creds"]
+
 
 def authenticate_gmail():
     """Authenticate with the Gmail API."""
@@ -65,10 +78,10 @@ def authenticate_gmail():
                 logger.info("Opening OAuth consent screen...")
                 creds = authenticate_with_timeout(flow, timeout=60)  # Thread-based timeout
                 logger.info("OAuth flow completed successfully.")
-            except TimeoutError:
+            except OAuthTimeoutException:
                 logger.error("Authentication process timed out.")
                 st.error("Authentication process timed out. Please try again.")
-                raise TimeoutError
+                raise OAuthTimeoutException
             except Exception as e:
                 logger.error("Error during OAuth flow:", exc_info=True)
                 st.error("Failed to complete OAuth authentication. Please try again.")
@@ -88,6 +101,7 @@ def authenticate_gmail():
         logger.error("Error initializing Gmail API client:", exc_info=True)
         st.error("Failed to initialize Gmail API client. Please check your credentials and try again.")
         raise e
+
 
 def fetch_emails(service, query="label:inbox"):
     """Fetch emails based on a query."""
@@ -117,11 +131,13 @@ def fetch_emails(service, query="label:inbox"):
         st.error("Failed to fetch emails. Please try again.")
         raise e
 
+
 def display_logs():
     """Display logs in the Streamlit UI."""
     if os.path.exists("app.log"):
         with open("app.log", "r") as log_file:
             st.text(log_file.read())
+
 
 # Streamlit App
 st.title("Gmail Dashboard")
