@@ -7,7 +7,7 @@ import pickle
 from google.auth.transport.requests import Request
 from logging.handlers import RotatingFileHandler
 
-# Function to clear the log file #
+# Function to clear the log file
 def clear_log_file():
     """Clear the log file at the start of the app."""
     with open("app.log", "w") as log_file:
@@ -106,23 +106,30 @@ def fetch_emails(service, query="", limit=5):
     try:
         st.write("Step 9: Fetching emails")
         logger.info("Fetching emails with query: %s", query)
+
+        # Call Gmail API to list messages
         results = service.users().messages().list(userId='me', q=query).execute()
+        logger.info("Gmail API response: %s", results)  # Log the full response for debugging
+
+        # Extract messages
         messages = results.get('messages', [])
         email_data = []
         if not messages:
             st.write("No emails found.")
             logger.info("No emails found in Gmail response.")
             return email_data
-        # Fetch details for only the first `limit` messages
+
+        # Fetch detailed information for each message
         for msg in messages[:limit]:
             email = service.users().messages().get(userId='me', id=msg['id']).execute()
-            snippet = email.get('snippet', 'No content')
+            snippet = email.get('snippet', 'No content')  # Extract snippet
             email_data.append({"id": msg['id'], "snippet": snippet})
         st.write("Step 10: Emails fetched successfully")
-        logger.info("Fetched %d emails successfully.", len(email_data))
+        logger.info("Fetched emails: %s", email_data)
         return email_data
+
     except Exception as e:
-        logger.error("Error fetching emails:", exc_info=True)
+        logger.error("Error fetching emails: %s", str(e), exc_info=True)
         st.error("Failed to fetch emails. Please check your Gmail permissions and try again.")
         raise e
 
@@ -131,10 +138,12 @@ def display_logs():
     if os.path.exists("app.log"):
         with open("app.log", "r") as log_file:
             logs = log_file.readlines()
-            # Display only the last 100 lines to avoid exceeding the message size limit
-            st.text("".join(logs[-100:]))
+            if logs:
+                st.text("".join(logs[-100:]))  # Show only the last 100 lines
+            else:
+                st.write("No logs available.")
     else:
-        st.write("No logs available.")
+        st.write("Log file not found.")
 
 # Streamlit App
 st.title("Gmail Dashboard")
@@ -147,13 +156,13 @@ if st.button("Fetch Emails"):
         st.write("Fetching emails...")
         emails = fetch_emails(service, query="", limit=5)  # Fetch a maximum of 5 emails
         if emails:
-            st.write("Fetched Emails:")
+            st.success("Fetched Emails:")
             for email in emails:
                 st.write(f"**ID**: {email['id']}")
                 st.write(f"**Snippet**: {email['snippet']}")
                 st.write("---")
         else:
-            st.write("No emails found. Try sending some test emails to your account.")
+            st.warning("No emails found. Try sending test emails to your account.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
