@@ -116,9 +116,9 @@ def fetch_emails(service, query="", limit=5):
 
         # Call Gmail API to list messages
         results = service.users().messages().list(userId='me', q=query).execute()
+        st.write("Raw Gmail API Response:")
+        st.json(results)  # Display the full API response for debugging
         logger.info("Raw Gmail API response: %s", results)
-        st.write("Gmail API Response:")
-        st.write(results)
 
         # Extract messages
         messages = results.get('messages', [])
