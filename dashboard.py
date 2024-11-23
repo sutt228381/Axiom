@@ -65,13 +65,17 @@ def authenticate_gmail():
                     "token_uri": st.secrets["gmail_token_uri"],
                     "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_cert_url"],
                     "client_secret": st.secrets["gmail_client_secret"],
-                    "redirect_uris": [st.secrets["gmail_redirect_uri"]]
+                    "redirect_uris": ["http://localhost:8080/"]
                 }
             }, SCOPES)
 
             try:
-                # Use console-based authentication
-                creds = flow.run_console()
+                creds = flow.run_local_server(
+                    port=8080,
+                    authorization_prompt_message="Please visit this URL: {url}",
+                    success_message="Authentication complete! You may close this window.",
+                    open_browser=False
+                )
                 logger.info("OAuth flow completed successfully.")
             except Exception as e:
                 logger.error("Error during OAuth flow.", exc_info=True)
@@ -119,32 +123,10 @@ def fetch_emails(service, query="", limit=5):
         st.error("Failed to fetch emails. Please check your Gmail permissions and try again.")
         return []
 
-def clear_token_file():
-    """Clear the token file to reset authentication."""
-    if os.path.exists("token.pickle"):
-        os.remove("token.pickle")
-        st.success("Token file cleared. Re-run authentication.")
-    else:
-        st.warning("No token file found to clear.")
-
-def display_logs():
-    """Display the last 100 lines of the log file."""
-    log_file_path = "app.log"
-    if os.path.exists(log_file_path):
-        with open(log_file_path, "r") as log_file:
-            logs = log_file.readlines()
-            if logs:
-                st.text("".join(logs[-100:]))
-            else:
-                st.write("Log file is empty.")
-    else:
-        st.write("Log file not found.")
-
 # Streamlit App UI
 st.title("Gmail Dashboard")
 st.write("A dashboard to view and analyze your Gmail data.")
 
-# Buttons for user actions
 if st.button("Authenticate and Fetch Emails"):
     try:
         st.write("Authenticating with Gmail...")
@@ -161,11 +143,5 @@ if st.button("Authenticate and Fetch Emails"):
     except Exception as e:
         st.error(f"An error occurred: {e}")
         logger.error("Error during email fetching.", exc_info=True)
-
-if st.button("Show Logs"):
-    display_logs()
-
-if st.button("Clear Token"):
-    clear_token_file()
 
 st.write("Powered by Gmail API and Streamlit.")
