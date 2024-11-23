@@ -7,23 +7,31 @@ import pickle
 from google.auth.transport.requests import Request
 from logging.handlers import RotatingFileHandler
 
+# Environment Variable Settings
+# Set Google Project ID explicitly (update the Streamlit secrets with your correct project ID)
+os.environ["GOOGLE_CLOUD_PROJECT"] = st.secrets["gmail_project_id"]
+
+# Suppress Compute Engine Metadata server warnings
+os.environ["NO_GCE_CHECK"] = "true"
+
+# Optional: If you have a credentials.json file, set its path explicitly
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "path/to/your/credentials.json"
+
 # Function to clear the log file
 def clear_log_file():
     """Clear the log file at the start of the app."""
-    try:
-        with open("app.log", "w") as log_file:
-            log_file.truncate()
-        logger.info("Log file cleared at app start.")
-    except Exception as e:
-        st.error(f"Error clearing log file: {e}")
-        logger.error(f"Error clearing log file: {e}")
+    with open("app.log", "w") as log_file:
+        log_file.truncate()
+
+# Clear the log file
+clear_log_file()
 
 # Configure logging with rotation
 logging.basicConfig(
-    level=logging.INFO,  # Set to INFO or DEBUG for more details
+    level=logging.INFO,  # Set to INFO or DEBUG for detailed logs
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # Ensure the file is created
+        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),
         logging.StreamHandler()
     ]
 )
