@@ -18,7 +18,7 @@ clear_log_file()
 
 # Configure logging with rotation
 logging.basicConfig(
-    level=logging.INFO,  # Set to INFO to avoid excessive debug logs
+    level=logging.INFO,  # Set to INFO to suppress DEBUG logs
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # 5MB max size, 3 backups
