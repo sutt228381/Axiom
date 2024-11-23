@@ -7,25 +7,25 @@ import pickle
 from google.auth.transport.requests import Request
 from logging.handlers import RotatingFileHandler
 
-# Set up environment variables
-os.environ["GOOGLE_CLOUD_PROJECT"] = st.secrets["web"]["project_id"]  # Explicit project ID
-os.environ["NO_GCE_CHECK"] = "true"  # Suppress Compute Engine warnings
+# Suppress Compute Engine metadata warnings
+os.environ["NO_GCE_CHECK"] = "true"
 
-# Function to clear the log file
+# Gmail API Scope
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
+# Clear and set up logging
 def clear_log_file():
     """Clear the log file at the start of the app."""
     with open("app.log", "w") as log_file:
         log_file.truncate()
 
-# Clear the log file
 clear_log_file()
 
-# Configure logging with rotation
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # 5 MB max size, 3 backups
+        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),
         logging.StreamHandler()
     ]
 )
@@ -40,14 +40,8 @@ except Exception as e:
     st.error(f"Cannot write to log file: {e}")
     logger.error(f"Cannot write to log file: {e}")
 
-# Gmail API Scope
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
-
-st.write(f"Current working directory: {os.getcwd()}")  # Debug current working directory
-st.write("Step 1: App started")
-
 def authenticate_gmail():
-    """Authenticate with the Gmail API using headless flow."""
+    """Authenticate with the Gmail API using OAuth flow."""
     logger.info("Starting Gmail authentication...")
     token_file = 'token.pickle'
     creds = None
@@ -71,13 +65,13 @@ def authenticate_gmail():
             try:
                 credentials = {
                     "installed": {
-                        "client_id": st.secrets["web"]["client_id"],
-                        "project_id": st.secrets["web"]["project_id"],
-                        "auth_uri": st.secrets["web"]["auth_uri"],
-                        "token_uri": st.secrets["web"]["token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
-                        "client_secret": st.secrets["web"]["client_secret"],
-                        "redirect_uris": st.secrets["web"]["redirect_uris"]
+                        "client_id": st.secrets["gmail_client_id"],
+                        "project_id": st.secrets["gmail_project_id"],
+                        "auth_uri": st.secrets["gmail_auth_uri"],
+                        "token_uri": st.secrets["gmail_token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_cert_url"],
+                        "client_secret": st.secrets["gmail_client_secret"],
+                        "redirect_uris": [st.secrets["gmail_redirect_uri"]]
                     }
                 }
                 flow = InstalledAppFlow.from_client_config(credentials, SCOPES)
@@ -115,12 +109,11 @@ def authenticate_gmail():
 def fetch_emails(service, query="", limit=5):
     """Fetch a limited number of emails based on a query."""
     try:
-        st.write("Step 9: Fetching emails")
         logger.info("Fetching emails with query: %s", query)
 
         # Call Gmail API to list messages
         results = service.users().messages().list(userId='me', q=query).execute()
-        logger.info("Raw Gmail API response: %s", results)  # Log the full response for debugging
+        logger.info("Raw Gmail API response: %s", results)
 
         # Extract messages
         messages = results.get('messages', [])
@@ -135,7 +128,6 @@ def fetch_emails(service, query="", limit=5):
             email = service.users().messages().get(userId='me', id=msg['id']).execute()
             snippet = email.get('snippet', 'No content')  # Extract snippet
             email_data.append({"id": msg['id'], "snippet": snippet})
-        st.write("Step 10: Emails fetched successfully")
         logger.info("Fetched emails: %s", email_data)
         return email_data
 
