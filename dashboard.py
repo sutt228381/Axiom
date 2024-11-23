@@ -101,19 +101,24 @@ def authenticate_gmail():
         logger.info("Initializing Gmail API client...")
         service = build('gmail', 'v1', credentials=creds)
         logger.info("Gmail API client initialized successfully.")
+        st.write("Step 8: Gmail API client initialized")  # Debugging output
         return service
     except Exception as e:
         logger.error("Failed to initialize Gmail API client.", exc_info=True)
+        st.error("Failed to initialize Gmail API client. Please check your credentials and try again.")
         raise e
 
 def fetch_emails(service, query="", limit=5):
     """Fetch a limited number of emails based on a query."""
     try:
         logger.info("Fetching emails with query: %s", query)
+        st.write(f"Using query: {query}")
 
         # Call Gmail API to list messages
         results = service.users().messages().list(userId='me', q=query).execute()
         logger.info("Raw Gmail API response: %s", results)
+        st.write("Gmail API Response:")
+        st.write(results)
 
         # Extract messages
         messages = results.get('messages', [])
@@ -161,8 +166,13 @@ if st.button("Authenticate and Fetch Emails"):
         st.write("Authenticating with Gmail...")
         logger.info("Button clicked: Authenticate and Fetch Emails")
         service = authenticate_gmail()
+        if not service:
+            st.error("Failed to initialize Gmail API service. Check logs for details.")
+            logger.error("Gmail API service was not initialized.")
+            raise ValueError("Service initialization failed")
+
         st.write("Fetching emails...")
-        emails = fetch_emails(service, query="", limit=5)
+        emails = fetch_emails(service, query="label:inbox", limit=5)
         if emails:
             st.success("Fetched Emails:")
             for email in emails:
