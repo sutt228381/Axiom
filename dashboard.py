@@ -5,6 +5,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import pickle
 from google.auth.transport.requests import Request
+import signal
 
 # Configure logging to write to a file and stream to the terminal
 logging.basicConfig(
@@ -25,6 +26,12 @@ os.environ["BROWSER"] = "chrome"  # Set this to the browser you want to use
 
 # Define Gmail API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
+class TimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutException
 
 def authenticate_gmail():
     """Authenticate with the Gmail API."""
@@ -47,10 +54,17 @@ def authenticate_gmail():
         else:
             logger.info("Initiating OAuth flow...")
             try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(60)  # Set timeout for 60 seconds
                 flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
                 logger.info("Opening OAuth consent screen...")
                 creds = flow.run_local_server(port=0)  # Open OAuth consent screen
+                signal.alarm(0)  # Reset the timer
                 logger.info("OAuth flow completed successfully.")
+            except TimeoutException:
+                logger.error("Authentication process timed out.")
+                st.error("Authentication process timed out. Please try again.")
+                raise TimeoutException
             except Exception as e:
                 logger.error("Error during OAuth flow:", exc_info=True)
                 st.error("Failed to complete OAuth authentication. Please try again.")
@@ -99,6 +113,12 @@ def fetch_emails(service, query="label:inbox"):
         st.error("Failed to fetch emails. Please try again.")
         raise e
 
+def display_logs():
+    """Display logs in the Streamlit UI."""
+    if os.path.exists("app.log"):
+        with open("app.log", "r") as log_file:
+            st.text(log_file.read())
+
 # Streamlit App
 st.title("Gmail Dashboard")
 st.write("A dashboard to view and analyze your Gmail data.")
@@ -121,6 +141,10 @@ if st.button("Fetch Emails"):
     except Exception as e:
         st.error(f"An error occurred: {e}")
         logger.error("An unexpected error occurred.", exc_info=True)
+
+# Button to show logs
+if st.button("Show Logs"):
+    display_logs()
 
 # Footer
 st.write("Powered by Gmail API and Streamlit.")
