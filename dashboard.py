@@ -5,7 +5,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import pickle
 from google.auth.transport.requests import Request
-from threading import Thread
 
 # Configure logging to write to a file and stream to the terminal
 logging.basicConfig(
@@ -24,33 +23,8 @@ logger.info("App started successfully.")
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 
-class OAuthTimeoutException(Exception):
-    pass
-
-
-def authenticate_with_timeout(flow, timeout=60):
-    """Run the OAuth flow with a timeout using threading."""
-    result = {"creds": None, "error": None}
-
-    def run_flow():
-        try:
-            result["creds"] = flow.run_local_server(port=0)
-        except Exception as e:
-            result["error"] = e
-
-    thread = Thread(target=run_flow)
-    thread.start()
-    thread.join(timeout)
-
-    if thread.is_alive():
-        raise OAuthTimeoutException("Authentication process timed out.")
-    if result["error"]:
-        raise result["error"]
-    return result["creds"]
-
-
 def authenticate_gmail():
-    """Authenticate with the Gmail API."""
+    """Authenticate with the Gmail API using headless flow."""
     logger.info("Starting Gmail authentication...")
     token_file = 'token.pickle'
     creds = None
@@ -68,19 +42,23 @@ def authenticate_gmail():
             creds.refresh(Request())
             logger.info("Token refreshed successfully.")
         else:
-            logger.info("Initiating OAuth flow...")
+            logger.info("Initiating headless OAuth flow...")
             try:
                 # Load credentials from Streamlit Secrets
                 flow = InstalledAppFlow.from_client_config(
                     {"installed": st.secrets["gmail_credentials"]}, SCOPES
                 )
-                logger.info("Opening OAuth consent screen...")
-                creds = authenticate_with_timeout(flow, timeout=60)  # Thread-based timeout
-                logger.info("OAuth flow completed successfully.")
-            except OAuthTimeoutException:
-                logger.error("Authentication process timed out.")
-                st.error("Authentication process timed out. Please try again.")
-                raise OAuthTimeoutException
+                # Headless mode: Generate the authorization URL
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.write("Please go to this URL to authenticate:")
+                st.write(auth_url)
+                st.write("Enter the authorization code below:")
+
+                # Input box for user to paste the code
+                auth_code = st.text_input("Authorization Code", key="auth_code")
+                if auth_code:
+                    creds = flow.fetch_token(code=auth_code)
+                    logger.info("OAuth flow completed successfully.")
             except Exception as e:
                 logger.error("Error during OAuth flow:", exc_info=True)
                 st.error("Failed to complete OAuth authentication. Please try again.")
