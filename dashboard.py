@@ -7,15 +7,9 @@ import pickle
 from google.auth.transport.requests import Request
 from logging.handlers import RotatingFileHandler
 
-# Environment Variable Settings
-# Set Google Project ID explicitly (update the Streamlit secrets with your correct project ID)
-os.environ["GOOGLE_CLOUD_PROJECT"] = st.secrets["gmail_project_id"]
-
-# Suppress Compute Engine Metadata server warnings
-os.environ["NO_GCE_CHECK"] = "true"
-
-# Optional: If you have a credentials.json file, set its path explicitly
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "path/to/your/credentials.json"
+# Set up environment variables
+os.environ["GOOGLE_CLOUD_PROJECT"] = st.secrets["web"]["project_id"]  # Explicit project ID
+os.environ["NO_GCE_CHECK"] = "true"  # Suppress Compute Engine warnings
 
 # Function to clear the log file
 def clear_log_file():
@@ -28,10 +22,10 @@ clear_log_file()
 
 # Configure logging with rotation
 logging.basicConfig(
-    level=logging.INFO,  # Set to INFO or DEBUG for detailed logs
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),
+        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # 5 MB max size, 3 backups
         logging.StreamHandler()
     ]
 )
@@ -60,65 +54,62 @@ def authenticate_gmail():
 
     # Check for existing token
     if os.path.exists(token_file):
-        logger.info("Loading existing token...")
+        logger.info("Token file exists. Loading existing token...")
         with open(token_file, 'rb') as token:
             creds = pickle.load(token)
-        st.write("Step 3: Loaded existing token")
+            logger.info("Token loaded successfully.")
 
     # If no valid token, initiate OAuth flow
     if not creds or not creds.valid:
+        logger.info("No valid token found. Proceeding with OAuth flow...")
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refreshing expired token...")
             creds.refresh(Request())
-            st.write("Step 4: Token refreshed")
+            logger.info("Token refreshed successfully.")
         else:
-            logger.info("Initiating OAuth flow...")
+            logger.info("Starting OAuth consent flow...")
             try:
-                # Prepare the credentials object
                 credentials = {
                     "installed": {
-                        "client_id": st.secrets["gmail_client_id"],
-                        "project_id": st.secrets["gmail_project_id"],
-                        "auth_uri": st.secrets["gmail_auth_uri"],
-                        "token_uri": st.secrets["gmail_token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_cert_url"],
-                        "client_secret": st.secrets["gmail_client_secret"],
-                        "redirect_uris": [st.secrets["gmail_redirect_uri"]]
+                        "client_id": st.secrets["web"]["client_id"],
+                        "project_id": st.secrets["web"]["project_id"],
+                        "auth_uri": st.secrets["web"]["auth_uri"],
+                        "token_uri": st.secrets["web"]["token_uri"],
+                        "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
+                        "client_secret": st.secrets["web"]["client_secret"],
+                        "redirect_uris": st.secrets["web"]["redirect_uris"]
                     }
                 }
-                # Set up the OAuth flow
                 flow = InstalledAppFlow.from_client_config(credentials, SCOPES)
                 flow.redirect_uri = credentials["installed"]["redirect_uris"][0]
                 auth_url, _ = flow.authorization_url(prompt='consent')
-                st.write("Please go to this URL to authenticate:")
+                logger.info("OAuth URL generated successfully.")
+                st.write("Authenticate by visiting this URL:")
                 st.write(auth_url)
 
-                # Input box for authorization code
                 auth_code = st.text_input("Authorization Code", key="auth_code")
                 if auth_code:
+                    logger.info("Authorization code received. Exchanging for token...")
                     creds = flow.fetch_token(code=auth_code)
-                    st.write("Step 6: OAuth flow completed")
-                    logger.info("OAuth flow completed successfully.")
+                    logger.info("Token obtained successfully.")
             except Exception as e:
-                logger.error("Error during OAuth flow:", exc_info=True)
-                st.error("Failed to complete OAuth authentication. Please try again.")
+                logger.error("Error during OAuth flow.", exc_info=True)
+                st.error("Authentication failed. Check logs for details.")
                 raise e
 
         # Save the token
         with open(token_file, 'wb') as token:
             pickle.dump(creds, token)
-            st.write("Step 7: Token saved successfully")
-            logger.info("Token saved successfully.")
+            logger.info("Token saved to file.")
 
     # Build Gmail API client
     try:
+        logger.info("Initializing Gmail API client...")
         service = build('gmail', 'v1', credentials=creds)
-        st.write("Step 8: Gmail API client initialized")
         logger.info("Gmail API client initialized successfully.")
         return service
     except Exception as e:
-        logger.error("Error initializing Gmail API client:", exc_info=True)
-        st.error("Failed to initialize Gmail API client. Please check your credentials and try again.")
+        logger.error("Failed to initialize Gmail API client.", exc_info=True)
         raise e
 
 def fetch_emails(service, query="", limit=5):
@@ -129,7 +120,7 @@ def fetch_emails(service, query="", limit=5):
 
         # Call Gmail API to list messages
         results = service.users().messages().list(userId='me', q=query).execute()
-        logger.info("Gmail API response: %s", results)  # Log the full response for debugging
+        logger.info("Raw Gmail API response: %s", results)  # Log the full response for debugging
 
         # Extract messages
         messages = results.get('messages', [])
@@ -176,9 +167,10 @@ st.write("A dashboard to view and analyze your Gmail data.")
 if st.button("Authenticate and Fetch Emails"):
     try:
         st.write("Authenticating with Gmail...")
+        logger.info("Button clicked: Authenticate and Fetch Emails")
         service = authenticate_gmail()
         st.write("Fetching emails...")
-        emails = fetch_emails(service, query="", limit=5)  # Fetch a maximum of 5 emails
+        emails = fetch_emails(service, query="", limit=5)
         if emails:
             st.success("Fetched Emails:")
             for email in emails:
@@ -186,11 +178,10 @@ if st.button("Authenticate and Fetch Emails"):
                 st.write(f"**Snippet**: {email['snippet']}")
                 st.write("---")
         else:
-            st.warning("No emails found. Try sending test emails to your account.")
-
+            st.warning("No emails found.")
     except Exception as e:
         st.error(f"An error occurred: {e}")
-        logger.error("Error during email fetching or display: ", exc_info=True)
+        logger.error("Error occurred during email fetching.", exc_info=True)
 
 if st.button("Show Logs"):
     display_logs()
