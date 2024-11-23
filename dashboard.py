@@ -74,7 +74,7 @@ def authenticate_gmail():
                 st.error("Failed to complete OAuth authentication. Please try again.")
                 raise e
 
-        # Save the token for future use
+        # Save the token
         with open(token_file, 'wb') as token:
             pickle.dump(creds, token)
             st.write("Step 7: Token saved successfully")
@@ -91,7 +91,7 @@ def authenticate_gmail():
         st.error("Failed to initialize Gmail API client. Please check your credentials and try again.")
         raise e
 
-def fetch_emails(service, query="label:inbox"):
+def fetch_emails(service, query=""):
     """Fetch emails based on a query."""
     try:
         st.write("Step 9: Fetching emails")
@@ -105,9 +105,10 @@ def fetch_emails(service, query="label:inbox"):
             return email_data
         for msg in messages[:5]:
             email = service.users().messages().get(userId='me', id=msg['id']).execute()
-            snippet = email.get('snippet', 'No content')
+            snippet = email.get('snippet', 'No content')  # Extract email snippet
             email_data.append({"id": msg['id'], "snippet": snippet})
         st.write("Step 10: Emails fetched successfully")
+        logger.info("Fetched emails: %s", email_data)
         return email_data
     except Exception as e:
         logger.error("Error fetching emails:", exc_info=True)
