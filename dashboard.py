@@ -97,15 +97,16 @@ def fetch_emails(service, query=""):
         st.write("Step 9: Fetching emails")
         logger.info("Fetching emails with query: %s", query)
         results = service.users().messages().list(userId='me', q=query).execute()
+        logger.info("Gmail API response: %s", results)  # Log full response for debugging
         messages = results.get('messages', [])
         email_data = []
         if not messages:
-            st.write("No emails found.")
             logger.info("No emails found.")
+            st.write("No emails found.")
             return email_data
         for msg in messages[:5]:
             email = service.users().messages().get(userId='me', id=msg['id']).execute()
-            snippet = email.get('snippet', 'No content')  # Extract email snippet
+            snippet = email.get('snippet', 'No content')
             email_data.append({"id": msg['id'], "snippet": snippet})
         st.write("Step 10: Emails fetched successfully")
         logger.info("Fetched emails: %s", email_data)
@@ -127,9 +128,12 @@ st.write("A dashboard to view and analyze your Gmail data.")
 
 if st.button("Fetch Emails"):
     try:
+        st.write("Authenticating with Gmail...")
         service = authenticate_gmail()
-        emails = fetch_emails(service)
+        st.write("Fetching emails...")
+        emails = fetch_emails(service, query="")  # Empty query to fetch all emails
         if emails:
+            st.write("Fetched Emails:")
             for email in emails:
                 st.write(f"**ID**: {email['id']}")
                 st.write(f"**Snippet**: {email['snippet']}")
@@ -138,6 +142,7 @@ if st.button("Fetch Emails"):
             st.write("No emails to display.")
     except Exception as e:
         st.error(f"An error occurred: {e}")
+        logger.error("Error during email fetching or display: ", exc_info=True)
 
 if st.button("Show Logs"):
     display_logs()
