@@ -5,13 +5,23 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import pickle
 from google.auth.transport.requests import Request
+from logging.handlers import RotatingFileHandler
 
-# Configure logging
+# Function to clear the log file
+def clear_log_file():
+    """Clear the log file at the start of the app."""
+    with open("app.log", "w") as log_file:
+        log_file.truncate()
+
+# Clear the log file
+clear_log_file()
+
+# Configure logging with rotation
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Set to INFO to avoid excessive debug logs
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("app.log"),
+        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # 5MB max size, 3 backups
         logging.StreamHandler()
     ]
 )
@@ -97,7 +107,6 @@ def fetch_emails(service, query="", limit=5):
         st.write("Step 9: Fetching emails")
         logger.info("Fetching emails with query: %s", query)
         results = service.users().messages().list(userId='me', q=query).execute()
-        logger.info("Gmail API response: Fetched %d messages.", len(results.get('messages', [])))
         messages = results.get('messages', [])
         email_data = []
         if not messages:
