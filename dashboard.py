@@ -22,7 +22,7 @@ def authenticate_gmail():
     flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
 
     try:
-        creds = flow.run_local_server(port=8080)
+        creds = flow.run_local_server(port=0)  # Dynamically select an available port
         logger.info("OAuth consent completed successfully.")
     except Exception as e:
         logger.error("Error during OAuth consent flow: %s", e)
