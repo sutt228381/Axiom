@@ -1,5 +1,7 @@
+
 [server]
 headless = true
 enableCORS = false
-#[browser]
-#browserCommand = "none"
+
+[server.fileWatcher]
+type = "none"
