@@ -10,11 +10,13 @@ from logging.handlers import RotatingFileHandler
 # Function to clear the log file
 def clear_log_file():
     """Clear the log file at the start of the app."""
-    with open("app.log", "w") as log_file:
-        log_file.truncate()
-
-# Clear the log file
-clear_log_file()
+    try:
+        with open("app.log", "w") as log_file:
+            log_file.truncate()
+        logger.info("Log file cleared at app start.")
+    except Exception as e:
+        st.error(f"Error clearing log file: {e}")
+        logger.error(f"Error clearing log file: {e}")
 
 # Configure logging with rotation
 logging.basicConfig(
@@ -27,9 +29,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Test log file creation
+try:
+    with open("app.log", "a") as test_log:
+        test_log.write("Log file initialized.\n")
+    logger.info("Log file initialized successfully.")
+except Exception as e:
+    st.error(f"Cannot write to log file: {e}")
+    logger.error(f"Cannot write to log file: {e}")
+
 # Gmail API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
+st.write(f"Current working directory: {os.getcwd()}")  # Debug current working directory
 st.write("Step 1: App started")
 
 def authenticate_gmail():
@@ -135,13 +147,17 @@ def fetch_emails(service, query="", limit=5):
 
 def display_logs():
     """Display only the last 100 lines of the log file in the Streamlit UI."""
-    if os.path.exists("app.log"):
-        with open("app.log", "r") as log_file:
+    log_file_path = "app.log"  # Ensure this matches your log file path
+    st.write(f"Checking for log file: {log_file_path}")
+
+    if os.path.exists(log_file_path):
+        st.write(f"Log file exists: {log_file_path}")
+        with open(log_file_path, "r") as log_file:
             logs = log_file.readlines()
             if logs:
                 st.text("".join(logs[-100:]))  # Show only the last 100 lines
             else:
-                st.write("Logs are empty.")
+                st.write("Log file is empty.")
     else:
         st.write("Log file not found.")
 
