@@ -8,6 +8,7 @@ from google.auth.transport.requests import Request
 
 # Suppress Compute Engine Metadata warnings
 os.environ["NO_GCE_CHECK"] = "true"
+os.environ["GOOGLE_CLOUD_PROJECT"] = "placeholder-project"
 
 # Gmail API Scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -70,15 +71,8 @@ def authenticate_gmail():
 
             try:
                 # Use console-based authentication
-                auth_url, _ = flow.authorization_url(prompt='consent')
-                st.write("**Step 1:** Open this URL in your browser:")
-                st.write(auth_url)
-
-                # Prompt user to enter the authorization code
-                auth_code = st.text_input("**Step 2:** Enter the authorization code from your browser here:")
-                if auth_code:
-                    creds = flow.fetch_token(code=auth_code)
-                    logger.info("Authorization code accepted. Token obtained successfully.")
+                creds = flow.run_console()
+                logger.info("OAuth flow completed successfully.")
             except Exception as e:
                 logger.error("Error during OAuth flow.", exc_info=True)
                 st.error("Authentication failed. Check logs for details.")
@@ -113,7 +107,6 @@ def fetch_emails(service, query="", limit=5):
             logger.info("No emails found in Gmail response.")
             return []
 
-        # Fetch message details
         email_data = []
         for msg in messages[:limit]:
             email = service.users().messages().get(userId='me', id=msg['id']).execute()
