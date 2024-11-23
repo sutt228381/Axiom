@@ -18,10 +18,10 @@ clear_log_file()
 
 # Configure logging with rotation
 logging.basicConfig(
-    level=logging.INFO,  # Set to INFO to suppress DEBUG logs
+    level=logging.INFO,  # Set to INFO or DEBUG for more details
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # 5MB max size, 3 backups
+        RotatingFileHandler("app.log", maxBytes=5000000, backupCount=3),  # Ensure the file is created
         logging.StreamHandler()
     ]
 )
@@ -141,7 +141,7 @@ def display_logs():
             if logs:
                 st.text("".join(logs[-100:]))  # Show only the last 100 lines
             else:
-                st.write("No logs available.")
+                st.write("Logs are empty.")
     else:
         st.write("Log file not found.")
 
@@ -149,7 +149,7 @@ def display_logs():
 st.title("Gmail Dashboard")
 st.write("A dashboard to view and analyze your Gmail data.")
 
-if st.button("Fetch Emails"):
+if st.button("Authenticate and Fetch Emails"):
     try:
         st.write("Authenticating with Gmail...")
         service = authenticate_gmail()
