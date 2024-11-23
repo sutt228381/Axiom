@@ -67,8 +67,22 @@ def authenticate_gmail():
                     "redirect_uris": [st.secrets["gmail_redirect_uri"]]
                 }
             }, SCOPES)
-            creds = flow.run_local_server(port=0)
-            logger.info("OAuth flow completed successfully.")
+
+            try:
+                # Use console-based authentication
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                st.write("**Step 1:** Open this URL in your browser:")
+                st.write(auth_url)
+
+                # Prompt user to enter the authorization code
+                auth_code = st.text_input("**Step 2:** Enter the authorization code from your browser here:")
+                if auth_code:
+                    creds = flow.fetch_token(code=auth_code)
+                    logger.info("Authorization code accepted. Token obtained successfully.")
+            except Exception as e:
+                logger.error("Error during OAuth flow.", exc_info=True)
+                st.error("Authentication failed. Check logs for details.")
+                raise e
 
         # Save the token
         with open(token_file, 'wb') as token:
