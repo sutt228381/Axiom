@@ -44,24 +44,22 @@ def authenticate_gmail():
         else:
             logger.info("Initiating OAuth flow...")
             try:
-                # Load credentials from Streamlit Secrets
+                # Prepare the credentials object
                 credentials = {
                     "installed": {
                         "client_id": st.secrets["gmail_client_id"],
                         "project_id": st.secrets["gmail_project_id"],
                         "auth_uri": st.secrets["gmail_auth_uri"],
                         "token_uri": st.secrets["gmail_token_uri"],
-                        "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_x509_cert_url"],
+                        "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_cert_url"],
                         "client_secret": st.secrets["gmail_client_secret"],
-                        "redirect_uris": st.secrets["gmail_redirect_uris"].split(",")
+                        "redirect_uris": [st.secrets["gmail_redirect_uri"]]
                     }
                 }
-
                 # Set up the OAuth flow
                 flow = InstalledAppFlow.from_client_config(credentials, SCOPES)
-                flow.redirect_uri = credentials["installed"]["redirect_uris"][0]  # Use the first redirect URI
+                flow.redirect_uri = credentials["installed"]["redirect_uris"][0]
                 auth_url, _ = flow.authorization_url(prompt='consent')
-                st.write("Step 5: Authorization URL generated")
                 st.write("Please go to this URL to authenticate:")
                 st.write(auth_url)
 
@@ -76,7 +74,7 @@ def authenticate_gmail():
                 st.error("Failed to complete OAuth authentication. Please try again.")
                 raise e
 
-        # Save the token
+        # Save the token for future use
         with open(token_file, 'wb') as token:
             pickle.dump(creds, token)
             st.write("Step 7: Token saved successfully")
