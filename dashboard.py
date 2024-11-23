@@ -6,37 +6,34 @@ from googleapiclient.discovery import build
 import pickle
 from google.auth.transport.requests import Request
 
-# Suppress Compute Engine Metadata warnings
-os.environ["NO_GCE_CHECK"] = "true"
-os.environ["GOOGLE_CLOUD_PROJECT"] = "placeholder-project"
+# Configure logging
+LOG_FILE = "app.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),  # Log to a file
+        logging.StreamHandler()         # Also log to the console
+    ]
+)
+logger = logging.getLogger(__name__)
 
-# Gmail API Scope
+# Set up environment variables
+os.environ["NO_GCE_CHECK"] = "true"  # Suppress Compute Engine warning
+
+# Function to clear the log file
+def clear_log_file():
+    """Clears the log file at the start of each session."""
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "w") as log_file:
+            log_file.truncate()
+clear_log_file()
+logger.info("Log file initialized successfully.")
+
+# Gmail API scope
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-# Logging setup
-def setup_logger():
-    """Sets up logging with a rotating file handler."""
-    log_file = "app.log"
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
-    )
-    logger = logging.getLogger(__name__)
-    try:
-        with open(log_file, "a") as log_test:
-            log_test.write("Log file initialized.\n")
-        logger.info("Log file initialized successfully.")
-    except Exception as e:
-        st.error(f"Cannot write to log file: {e}")
-        logger.error(f"Cannot write to log file: {e}")
-    return logger
-
-logger = setup_logger()
-
+# Authenticate Gmail API
 def authenticate_gmail():
     """Authenticate with the Gmail API using OAuth flow."""
     logger.info("Starting Gmail authentication...")
@@ -65,16 +62,16 @@ def authenticate_gmail():
                     "token_uri": st.secrets["gmail_token_uri"],
                     "auth_provider_x509_cert_url": st.secrets["gmail_auth_provider_cert_url"],
                     "client_secret": st.secrets["gmail_client_secret"],
-                    "redirect_uris": ["http://localhost:8080/"]
+                    "redirect_uris": ["http://localhost:*"]
                 }
             }, SCOPES)
 
             try:
                 creds = flow.run_local_server(
-                    port=8080,
+                    port=0,  # Automatically chooses an available port
                     authorization_prompt_message="Please visit this URL: {url}",
                     success_message="Authentication complete! You may close this window.",
-                    open_browser=False
+                    open_browser=False  # Avoids browser issues
                 )
                 logger.info("OAuth flow completed successfully.")
             except Exception as e:
@@ -97,51 +94,54 @@ def authenticate_gmail():
         st.error("Failed to initialize Gmail API client. Please check your credentials and try again.")
         raise e
 
-def fetch_emails(service, query="", limit=5):
-    """Fetch emails from Gmail API."""
+# Fetch emails
+def fetch_emails(service, query="label:inbox"):
+    """Fetches emails from Gmail using the specified query."""
+    logger.info(f"Fetching emails with query: {query}")
     try:
-        logger.info(f"Fetching emails with query: {query}")
         results = service.users().messages().list(userId='me', q=query).execute()
-        st.write("Raw Gmail API Response:")
-        st.json(results)
-        logger.info(f"Raw response: {results}")
         messages = results.get('messages', [])
-        if not messages:
-            st.warning("No emails found.")
-            logger.info("No emails found in Gmail response.")
-            return []
-
         email_data = []
-        for msg in messages[:limit]:
+
+        if not messages:
+            st.info("No emails found.")
+            logger.info("No emails found.")
+            return email_data
+
+        for msg in messages[:5]:  # Fetch only the first 5 emails
             email = service.users().messages().get(userId='me', id=msg['id']).execute()
-            snippet = email.get('snippet', 'No content')
-            email_data.append({"id": msg['id'], "snippet": snippet})
-        logger.info(f"Fetched emails: {email_data}")
+            snippet = email.get('snippet', 'No content')  # Extract email snippet
+            email_data.append({
+                'id': msg['id'],
+                'snippet': snippet,
+                'internalDate': email.get('internalDate'),
+                'payload': email.get('payload', {}).get('headers', [])
+            })
+        logger.info(f"Fetched {len(email_data)} emails successfully.")
         return email_data
     except Exception as e:
-        logger.error("Error fetching emails", exc_info=True)
-        st.error("Failed to fetch emails. Please check your Gmail permissions and try again.")
-        return []
+        logger.error("Error fetching emails.", exc_info=True)
+        st.error("Failed to fetch emails. Check logs for details.")
+        raise e
 
-# Streamlit App UI
+# Streamlit app
 st.title("Gmail Dashboard")
 st.write("A dashboard to view and analyze your Gmail data.")
 
+# Button to trigger email fetching
 if st.button("Authenticate and Fetch Emails"):
     try:
-        st.write("Authenticating with Gmail...")
-        service = authenticate_gmail()
-        emails = fetch_emails(service, query="label:inbox", limit=5)
+        logger.info("Button clicked: Authenticate and Fetch Emails")
+        service = authenticate_gmail()  # Authenticate Gmail API
+        emails = fetch_emails(service)  # Fetch emails
         if emails:
-            st.success("Fetched Emails:")
+            st.write("Fetched Emails:")
             for email in emails:
                 st.write(f"**ID**: {email['id']}")
                 st.write(f"**Snippet**: {email['snippet']}")
                 st.write("---")
-        else:
-            st.warning("No emails found.")
     except Exception as e:
-        st.error(f"An error occurred: {e}")
         logger.error("Error during email fetching.", exc_info=True)
 
+# Footer
 st.write("Powered by Gmail API and Streamlit.")
