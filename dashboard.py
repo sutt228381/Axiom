@@ -2,11 +2,11 @@ import os
 import logging
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 import streamlit as st
 
 # Set up logging
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -19,6 +19,13 @@ REDIRECT_URI = st.secrets["web"]["redirect_uris"][0]
 AUTH_URI = st.secrets["web"]["auth_uri"]
 TOKEN_URI = st.secrets["web"]["token_uri"]
 
+# Add your test users here
+AUTHORIZED_TEST_USERS = [
+    "testuser1@example.com",
+    "testuser2@example.com",  # Replace with actual test emails
+    "adammsutton@example.com"
+]
+
 def authenticate_gmail():
     """Authenticate Gmail API for Streamlit Cloud."""
     logger.info("Starting Gmail authentication...")
@@ -29,7 +36,7 @@ def authenticate_gmail():
             "auth_uri": AUTH_URI,
             "token_uri": TOKEN_URI,
             "client_secret": CLIENT_SECRET,
-            "redirect_uris": [REDIRECT_URI]
+            "redirect_uris": [REDIRECT_URI],
         }
     }
 
@@ -39,7 +46,8 @@ def authenticate_gmail():
     # Generate authorization URL
     auth_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='true'
+        include_granted_scopes='true',
+        prompt='consent',
     )
     logger.info(f"Redirecting user to: {auth_url}")
 
@@ -54,9 +62,12 @@ def authenticate_gmail():
             creds = flow.credentials
             logger.info("Authentication successful. Initializing Gmail API client...")
             return build('gmail', 'v1', credentials=creds)
+        except RefreshError as e:
+            logger.error(f"Token refresh error: {e}")
+            st.error("An error occurred during authentication. Please try again.")
         except Exception as e:
-            logger.error(f"Error during authentication: {e}")
-            st.error(f"An error occurred during authentication: {e}")
+            logger.error(f"Authentication error: {e}")
+            st.error("An error occurred during authentication. Please try again.")
 
     return None
 
@@ -80,24 +91,37 @@ def fetch_emails(service, query="label:inbox"):
 st.title("Gmail Dashboard")
 st.write("Authenticate with Gmail and fetch your latest emails.")
 
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+# User input to choose email
+st.write("Enter your email address:")
+user_email = st.text_input("Email Address", key="user_email")
 
-if not st.session_state["authenticated"]:
-    st.write("You need to authenticate to proceed.")
-    service = authenticate_gmail()
-    if service:
-        st.session_state["authenticated"] = True
-        st.session_state["service"] = service
-else:
-    st.write("You are authenticated!")
-    service = st.session_state["service"]
-    if st.button("Fetch Emails"):
-        st.write("Fetching emails...")
-        emails = fetch_emails(service)
-        if emails:
-            st.write("Fetched Emails:")
-            for email in emails:
-                st.write(email)
-        else:
-            st.write("No emails found.")
+if st.button("Submit Email"):
+    if user_email in AUTHORIZED_TEST_USERS:
+        st.session_state["selected_email"] = user_email
+        st.success(f"Email {user_email} is valid. Proceed to authenticate.")
+    else:
+        st.error(f"Email {user_email} is not authorized. Please use a valid test email.")
+
+if "selected_email" in st.session_state:
+    st.write(f"Selected email: {st.session_state['selected_email']}")
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+
+    if not st.session_state["authenticated"]:
+        st.write("You need to authenticate to proceed.")
+        service = authenticate_gmail()
+        if service:
+            st.session_state["authenticated"] = True
+            st.session_state["service"] = service
+    else:
+        st.write("You are authenticated!")
+        service = st.session_state["service"]
+        if st.button("Fetch Emails"):
+            st.write("Fetching emails...")
+            emails = fetch_emails(service)
+            if emails:
+                st.write("Fetched Emails:")
+                for email in emails:
+                    st.write(email)
+            else:
+                st.write("No emails found.")
