@@ -46,17 +46,22 @@ def authenticate_gmail():
                 # Input field for authentication code
                 auth_code = st.text_input("Enter the authorization code:")
                 if auth_code:
-                    creds = flow.fetch_token(code=auth_code)
-                    logger.info("OAuth flow completed successfully.")
+                    try:
+                        creds = flow.fetch_token(code=auth_code)
+                        logger.info("OAuth flow completed successfully.")
+                    except Exception as e:
+                        st.error(f"Invalid authorization code: {e}")
+                        return None
             except Exception as e:
                 logger.error("Error during OAuth flow.", exc_info=True)
                 st.error(f"An error occurred during OAuth flow: {e}")
                 return None
 
         # Save the token for future use
-        with open(token_file, "w") as token:
-            token.write(creds.to_json())
-            logger.info("Token saved successfully.")
+        if creds:
+            with open(token_file, "w") as token:
+                token.write(creds.to_json())
+                logger.info("Token saved successfully.")
 
     # Build Gmail API client
     try:
