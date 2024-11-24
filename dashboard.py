@@ -59,16 +59,31 @@ def authenticate_gmail():
             logger.info("Initiating OAuth flow...")
             create_client_secrets()
             flow = InstalledAppFlow.from_client_secrets_file("client_secrets.json", SCOPES)
-            creds = flow.run_local_server(port=8080)
-            with open(TOKEN_FILE, "w") as token_file:
-                token_file.write(creds.to_json())
-                logger.info("Token saved successfully.")
+
+            # Use a URL-based flow for Streamlit Cloud
+            auth_url, _ = flow.authorization_url(prompt="consent")
+            st.write("Go to the following URL and authorize the app:")
+            st.write(auth_url)
+
+            # Enter the authorization code manually
+            auth_code = st.text_input("Enter the authorization code:")
+            if st.button("Submit Authorization Code"):
+                try:
+                    flow.fetch_token(code=auth_code)
+                    creds = flow.credentials
+                    with open(TOKEN_FILE, "w") as token_file:
+                        token_file.write(creds.to_json())
+                        logger.info("Token saved successfully.")
+                except Exception as e:
+                    logger.error(f"Error fetching token: {e}")
+                    st.error("Failed to fetch token. Please try again.")
 
     # Build Gmail API service
     try:
-        service = build("gmail", "v1", credentials=creds)
-        logger.info("Gmail API client initialized successfully.")
-        return service
+        if creds:
+            service = build("gmail", "v1", credentials=creds)
+            logger.info("Gmail API client initialized successfully.")
+            return service
     except Exception as e:
         logger.error(f"Error initializing Gmail API client: {e}")
         st.error(f"Error initializing Gmail API client: {e}")
