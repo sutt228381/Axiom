@@ -1,62 +1,67 @@
 import os
 import logging
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-from logging.handlers import RotatingFileHandler
 import streamlit as st
 
-# Set up environment variables
-os.environ["GOOGLE_CLOUD_PROJECT"] = st.secrets["web"]["project_id"]
-
 # Set up logging
-log_file = "app.log"
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=2)]
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-def authenticate_gmail():
-    logger.info("Starting Gmail authentication...")
-    creds = None
+# Streamlit Secrets
+CLIENT_ID = st.secrets["web"]["client_id"]
+PROJECT_ID = st.secrets["web"]["project_id"]
+CLIENT_SECRET = st.secrets["web"]["client_secret"]
+REDIRECT_URI = st.secrets["web"]["redirect_uris"][0]
+AUTH_URI = st.secrets["web"]["auth_uri"]
+TOKEN_URI = st.secrets["web"]["token_uri"]
 
-    # Use Streamlit Secrets for credentials
+def authenticate_gmail():
+    """Authenticate Gmail API for Streamlit Cloud."""
+    logger.info("Starting Gmail authentication...")
     credentials_file = {
         "installed": {
-            "client_id": st.secrets["web"]["client_id"],
-            "project_id": st.secrets["web"]["project_id"],
-            "auth_uri": st.secrets["web"]["auth_uri"],
-            "token_uri": st.secrets["web"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
-            "client_secret": st.secrets["web"]["client_secret"],
-            "redirect_uris": st.secrets["web"]["redirect_uris"]
+            "client_id": CLIENT_ID,
+            "project_id": PROJECT_ID,
+            "auth_uri": AUTH_URI,
+            "token_uri": TOKEN_URI,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uris": [REDIRECT_URI]
         }
     }
 
-    try:
-        flow = InstalledAppFlow.from_client_config(credentials_file, SCOPES)
-        logger.info("Starting manual OAuth flow...")
-        creds = flow.run_console()  # Manual flow for Streamlit Cloud
-        logger.info("OAuth flow completed successfully.")
-    except Exception as e:
-        logger.error(f"Error during OAuth flow: {e}")
-        raise e
+    flow = Flow.from_client_config(credentials_file, SCOPES)
+    flow.redirect_uri = REDIRECT_URI
 
-    # Build the Gmail API client
-    try:
-        service = build('gmail', 'v1', credentials=creds)
-        logger.info("Gmail API client initialized successfully.")
-        return service
-    except Exception as e:
-        logger.error(f"Error initializing Gmail API client: {e}")
-        raise e
+    # Generate authorization URL
+    auth_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    logger.info(f"Redirecting user to: {auth_url}")
+
+    st.write("Click the link below to authenticate:")
+    st.markdown(f"[Authenticate with Gmail]({auth_url})")
+
+    # Wait for user to input authorization code
+    code = st.text_input("Paste the authorization code here:", key="auth_code")
+    if code:
+        try:
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            logger.info("Authentication successful. Initializing Gmail API client...")
+            return build('gmail', 'v1', credentials=creds)
+        except Exception as e:
+            logger.error(f"Error during authentication: {e}")
+            st.error(f"An error occurred during authentication: {e}")
+
+    return None
 
 def fetch_emails(service, query="label:inbox"):
-    logger.info(f"Fetching emails with query: {query}")
+    """Fetch the latest emails."""
     try:
         results = service.users().messages().list(userId='me', q=query).execute()
         messages = results.get('messages', [])
@@ -68,17 +73,26 @@ def fetch_emails(service, query="label:inbox"):
         return emails
     except Exception as e:
         logger.error(f"Error fetching emails: {e}")
-        raise e
+        st.error(f"An error occurred while fetching emails: {e}")
+        return []
 
 # Streamlit App
 st.title("Gmail Dashboard")
 st.write("Authenticate with Gmail and fetch your latest emails.")
 
-if st.button("Authenticate and Fetch Emails"):
-    try:
-        logger.info("Button clicked: Authenticate and Fetch Emails")
-        st.write("Authenticating with Gmail...")
-        service = authenticate_gmail()
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.write("You need to authenticate to proceed.")
+    service = authenticate_gmail()
+    if service:
+        st.session_state["authenticated"] = True
+        st.session_state["service"] = service
+else:
+    st.write("You are authenticated!")
+    service = st.session_state["service"]
+    if st.button("Fetch Emails"):
         st.write("Fetching emails...")
         emails = fetch_emails(service)
         if emails:
@@ -87,5 +101,3 @@ if st.button("Authenticate and Fetch Emails"):
                 st.write(email)
         else:
             st.write("No emails found.")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
