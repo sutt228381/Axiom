@@ -4,7 +4,6 @@ import logging
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
 
 # Configure logging
 logging.basicConfig(
@@ -18,9 +17,9 @@ logger = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 TOKEN_FILE = "token.json"
 
-# Dynamic secrets setup
+# Create client_secrets.json dynamically
 def create_client_secrets():
-    """Create client_secrets.json dynamically from Streamlit secrets."""
+    """Generate client_secrets.json from Streamlit secrets."""
     client_secrets = {
         "web": {
             "client_id": st.secrets["web"]["client_id"],
@@ -36,23 +35,18 @@ def create_client_secrets():
         json.dump(client_secrets, f)
     logger.info("Client secrets file created successfully.")
 
-# Authentication
+# Authenticate Gmail
 def authenticate_gmail():
-    """Authenticate with Gmail API using OAuth."""
-    logger.info("Starting Gmail authentication...")
+    """Authenticate Gmail API and return the service object."""
     try:
-        # Ensure client_secrets.json is created
         create_client_secrets()
         flow = InstalledAppFlow.from_client_secrets_file("client_secrets.json", SCOPES)
-        auth_url, _ = flow.authorization_url(prompt="consent")
-        st.write(f"Authenticate here: [Click this link]({auth_url})")
-        auth_code = st.text_input("Enter the authorization code:")
-        if auth_code:
-            creds = flow.fetch_token(code=auth_code)
-            with open(TOKEN_FILE, "w") as token_file:
-                json.dump(creds, token_file)
-            logger.info("Token saved successfully.")
-            return build("gmail", "v1", credentials=flow.credentials)
+        creds = flow.run_local_server(port=8080)  # Use port 8080
+        # Save the credentials for future use
+        with open(TOKEN_FILE, "w") as token:
+            json.dump(creds.to_json(), token)
+        logger.info("Token saved successfully.")
+        return build("gmail", "v1", credentials=flow.credentials)
     except Exception as e:
         st.error(f"An error occurred during authentication: {str(e)}")
         logger.error(f"Error during Gmail authentication: {str(e)}", exc_info=True)
@@ -60,15 +54,14 @@ def authenticate_gmail():
 
 # Fetch emails
 def fetch_emails(service):
-    """Fetch and display emails."""
-    logger.info("Fetching emails...")
+    """Fetch emails from Gmail and display them."""
     try:
         results = service.users().messages().list(userId="me", q="label:inbox").execute()
         messages = results.get("messages", [])
         if not messages:
             st.write("No emails found.")
             return
-        for message in messages[:5]:
+        for message in messages[:5]:  # Limit to first 5 emails
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No content")
             st.write(f"**Snippet**: {snippet}")
@@ -76,17 +69,11 @@ def fetch_emails(service):
         st.error(f"An error occurred while fetching emails: {str(e)}")
         logger.error(f"Error during email fetching: {str(e)}", exc_info=True)
 
-# Main App
+# Main app
 def main():
     st.title("Gmail Dashboard")
     st.write("Authenticate and view your Gmail inbox snippets.")
-    
-    # Google Cloud Project check
-    if "project_id" in st.secrets["web"]:
-        logger.info(f"Google Cloud Project: {st.secrets['web']['project_id']}")
-
     if st.button("Authenticate and Fetch Emails"):
-        logger.info("Button clicked: Authenticate and Fetch Emails")
         service = authenticate_gmail()
         if service:
             fetch_emails(service)
