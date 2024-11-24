@@ -1,9 +1,10 @@
 import os
 import logging
 import streamlit as st
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+import pickle
 
 # Configure logging
 logging.basicConfig(
@@ -12,93 +13,85 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Google Cloud Project setup
-os.environ["GOOGLE_CLOUD_PROJECT"] = st.secrets["web"]["project_id"]
+# Explicitly set Google Cloud Project
+os.environ["GOOGLE_CLOUD_PROJECT"] = "concise-rex-442402-b5"
 
-# OAuth Configuration
-CLIENT_CONFIG = {
-    "web": {
-        "client_id": st.secrets["web"]["client_id"],
-        "project_id": st.secrets["web"]["project_id"],
-        "auth_uri": st.secrets["web"]["auth_uri"],
-        "token_uri": st.secrets["web"]["token_uri"],
-        "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
-        "client_secret": st.secrets["web"]["client_secret"],
-    }
-}
-REDIRECT_URI = st.secrets["web"]["redirect_uris"][0]
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Authorized test users (case-insensitive)
+AUTHORIZED_TEST_USERS = ["sortsyai@gmail.com", "adammsutton@gmail.com"]
 
-# Initialize session state
-if "credentials" not in st.session_state:
-    st.session_state["credentials"] = None
+# Gmail API Scope
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
+# Function to authenticate Gmail API
+def authenticate_gmail():
+    logger.info("Starting Gmail authentication...")
+    token_file = 'token.pickle'
+    creds = None
 
-# Function to generate authorization URL
-def authenticate_user():
-    try:
-        flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES)
-        flow.redirect_uri = REDIRECT_URI
-        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-        return auth_url, flow
-    except Exception as e:
-        logger.error("Error generating auth URL:", exc_info=True)
-        st.error(f"An error occurred during authentication: {e}")
-        return None, None
+    # Load existing token
+    if os.path.exists(token_file):
+        logger.info("Loading existing token...")
+        with open(token_file, 'rb') as token:
+            creds = pickle.load(token)
 
+    # OAuth flow if no valid token
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            logger.info("Refreshing expired token...")
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file('client_secrets.json', SCOPES)
+            logger.info("Starting OAuth consent flow...")
+            creds = flow.run_local_server(port=8080, open_browser=False)  # Open consent page
 
-# Function to exchange authorization code for credentials
-def exchange_code(flow, authorization_code):
-    try:
-        flow.fetch_token(code=authorization_code)
-        credentials = flow.credentials
-        return credentials
-    except Exception as e:
-        logger.error("Error exchanging authorization code:", exc_info=True)
-        st.error(f"An error occurred during token exchange: {e}")
-        return None
+        # Save token for future use
+        with open(token_file, 'wb') as token:
+            pickle.dump(creds, token)
+            logger.info("Token saved successfully.")
 
+    return build('gmail', 'v1', credentials=creds)
 
 # Function to fetch emails
-def fetch_emails(credentials):
+def fetch_emails(service, query="label:inbox"):
+    logger.info(f"Fetching emails with query: {query}")
     try:
-        service = build("gmail", "v1", credentials=credentials)
-        results = service.users().messages().list(userId="me", maxResults=10).execute()
-        messages = results.get("messages", [])
-        return messages
+        results = service.users().messages().list(userId='me', q=query).execute()
+        messages = results.get('messages', [])
+        email_data = []
+        for msg in messages[:5]:  # Fetch first 5 emails
+            email = service.users().messages().get(userId='me', id=msg['id']).execute()
+            snippet = email.get('snippet', 'No content')
+            email_data.append({
+                'id': msg['id'],
+                'snippet': snippet,
+            })
+        return email_data
     except Exception as e:
         logger.error("Error fetching emails:", exc_info=True)
-        st.error(f"An error occurred during email fetching: {e}")
-        return None
+        st.error(f"An error occurred while fetching emails: {e}")
+        return []
 
-
-# Streamlit App
+# Streamlit UI
 st.title("Gmail Dashboard")
+st.write("Fetch and view emails using Gmail API.")
 
-# Authentication button
-if not st.session_state["credentials"]:
-    st.write("To begin, click 'Authenticate' to log into your Gmail account.")
-    if st.button("Authenticate"):
-        auth_url, flow = authenticate_user()
-        if auth_url:
-            st.write(f"[Click here to authenticate]({auth_url})")
-            st.write("Once you've authenticated, paste the authorization code below.")
-            
-            # Input for authorization code
-            authorization_code = st.text_input("Enter Authorization Code:")
-
-            if st.button("Submit Authorization Code"):
-                credentials = exchange_code(flow, authorization_code)
-                if credentials:
-                    st.session_state["credentials"] = credentials
-                    st.success("Authentication successful! You can now fetch emails.")
-
-# Fetch Emails button
-if st.session_state["credentials"]:
-    st.write("You are authenticated. Click 'Fetch Emails' to retrieve your messages.")
-    if st.button("Fetch Emails"):
-        emails = fetch_emails(st.session_state["credentials"])
-        if emails:
-            st.write("Fetched Emails:")
-            for msg in emails:
-                st.write(f"Message ID: {msg['id']}")
+# User email input
+user_email = st.text_input("Enter your email address:")
+if user_email:
+    if user_email.lower() not in [email.lower() for email in AUTHORIZED_TEST_USERS]:
+        st.error("Email is not authorized. Please use a valid test email.")
+    else:
+        if st.button("Authenticate and Fetch Emails"):
+            try:
+                service = authenticate_gmail()
+                emails = fetch_emails(service)
+                if emails:
+                    st.write("Fetched Emails:")
+                    for email in emails:
+                        st.write(f"**ID:** {email['id']}")
+                        st.write(f"**Snippet:** {email['snippet']}")
+                        st.write("---")
+                else:
+                    st.write("No emails found.")
+            except Exception as e:
+                st.error(f"An error occurred during authentication: {e}")
