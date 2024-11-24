@@ -20,20 +20,24 @@ TOKEN_FILE = "token.json"
 # Create client_secrets.json dynamically
 def create_client_secrets():
     """Generate client_secrets.json from Streamlit secrets."""
-    client_secrets = {
-        "web": {
-            "client_id": st.secrets["web"]["client_id"],
-            "project_id": st.secrets["web"]["project_id"],
-            "auth_uri": st.secrets["web"]["auth_uri"],
-            "token_uri": st.secrets["web"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
-            "client_secret": st.secrets["web"]["client_secret"],
-            "redirect_uris": st.secrets["web"]["redirect_uris"],
+    try:
+        client_secrets = {
+            "web": {
+                "client_id": st.secrets["web"]["client_id"],
+                "project_id": st.secrets["web"]["project_id"],
+                "auth_uri": st.secrets["web"]["auth_uri"],
+                "token_uri": st.secrets["web"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
+                "client_secret": st.secrets["web"]["client_secret"],
+                "redirect_uris": st.secrets["web"]["redirect_uris"],
+            }
         }
-    }
-    with open("client_secrets.json", "w") as f:
-        json.dump(client_secrets, f)
-    logger.info("Client secrets file created successfully.")
+        with open("client_secrets.json", "w") as f:
+            json.dump(client_secrets, f)
+        logger.info("Client secrets file created successfully.")
+    except Exception as e:
+        st.error(f"Error creating client_secrets.json: {str(e)}")
+        logger.error(f"Error creating client_secrets.json: {str(e)}", exc_info=True)
 
 # Authenticate Gmail
 def authenticate_gmail():
