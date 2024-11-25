@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
+# Function to create the client_secrets.json file
 def create_client_secrets_file():
     try:
         client_secrets = {
@@ -35,6 +36,7 @@ def create_client_secrets_file():
         logger.error(f"Error creating client_secrets.json: {e}")
         st.error(f"Error creating client_secrets.json: {e}")
 
+# Function to authenticate user with Gmail API
 def authenticate_user():
     create_client_secrets_file()
     try:
@@ -58,6 +60,19 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
+# Function to load credentials from the token file
+def load_credentials():
+    try:
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, "r") as token:
+                creds = json.load(token)
+            logger.info("Loaded credentials from token file.")
+            return creds
+    except Exception as e:
+        logger.error(f"Error loading credentials: {e}")
+        return None
+
+# Function to fetch and display emails
 def fetch_emails(service, query):
     try:
         results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
@@ -75,19 +90,37 @@ def fetch_emails(service, query):
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
 
+# Main app logic
 def main():
     st.title("Gmail Dashboard")
-    
-    # User input for email query
-    query = st.text_input("What would you like to view?", value="")
 
-    # Authenticate and fetch emails
-    if st.button("Authenticate and Fetch Emails"):
-        creds = authenticate_user()
-        if creds:
+    # Input for email address
+    user_email = st.text_input("Enter your email address to authenticate:")
+    if not user_email:
+        st.warning("Please enter your email address to proceed.")
+        return
+
+    # Input for query
+    query = st.text_input("What would you like to view? (e.g., 'TDBank', 'Amazon', etc.)", value="")
+
+    # Authenticate or load existing credentials
+    if "creds" not in st.session_state:
+        if st.button("Authenticate"):
+            creds = authenticate_user()
+            if creds:
+                st.session_state.creds = creds
+                st.success("Authentication successful!")
+    else:
+        creds = st.session_state.creds
+
+    # Fetch emails using authenticated credentials
+    if creds and st.button("Fetch Emails"):
+        try:
             service = build("gmail", "v1", credentials=creds)
-            st.write("Authentication successful. Fetching emails...")
             fetch_emails(service, query)
+        except Exception as e:
+            logger.error(f"Error fetching emails: {e}")
+            st.error(f"Error fetching emails: {e}")
 
 if __name__ == "__main__":
     main()
