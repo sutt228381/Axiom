@@ -60,17 +60,17 @@ def authenticate_user():
             st.error(f"Error during authentication: {e}")
     return creds
 
-def fetch_emails(service, query):
+def fetch_emails(service, user_email, query):
     """
     Fetch emails from the user's Gmail inbox based on a query.
     """
     try:
-        results = service.users().messages().list(userId='me', q=query, maxResults=10).execute()
+        results = service.users().messages().list(userId=user_email, q=query, maxResults=10).execute()
         messages = results.get('messages', [])
 
         email_data = []
         for message in messages:
-            msg = service.users().messages().get(userId='me', id=message['id']).execute()
+            msg = service.users().messages().get(userId=user_email, id=message['id']).execute()
             snippet = msg.get('snippet', '')
             headers = {header['name']: header['value'] for header in msg['payload']['headers']}
             subject = headers.get('Subject', 'No Subject')
@@ -105,21 +105,25 @@ def main():
     st.title("Gmail Email Dashboard")
     st.write("Authenticate with your Gmail account and filter emails by query.")
 
+    user_email = st.text_input("Enter your Gmail address:")
     query = st.text_input("Enter a query to search your emails (e.g., 'TDBank'):")
 
     if st.button("Authenticate and Fetch Emails"):
-        creds = authenticate_user()
-        if creds:
-            try:
-                service = build('gmail', 'v1', credentials=creds)
-                if query:
-                    emails = fetch_emails(service, query)
-                    display_dashboard(emails)
-                else:
-                    st.warning("Please enter a query to search emails.")
-            except Exception as e:
-                logger.error(f"An error occurred: {e}")
-                st.error(f"An error occurred: {e}")
+        if user_email:
+            creds = authenticate_user()
+            if creds:
+                try:
+                    service = build('gmail', 'v1', credentials=creds)
+                    if query:
+                        emails = fetch_emails(service, user_email, query)
+                        display_dashboard(emails)
+                    else:
+                        st.warning("Please enter a query to search emails.")
+                except Exception as e:
+                    logger.error(f"An error occurred: {e}")
+                    st.error(f"An error occurred: {e}")
+        else:
+            st.warning("Please enter your Gmail address.")
 
 if __name__ == "__main__":
     main()
