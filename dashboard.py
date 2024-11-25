@@ -4,7 +4,6 @@ import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.errors import HttpError
 import logging
@@ -29,7 +28,6 @@ def create_client_secrets():
                 "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
                 "client_secret": st.secrets["web"]["client_secret"],
                 "redirect_uris": st.secrets["web"]["redirect_uris"],
-                "javascript_origins": st.secrets["web"]["javascript_origins"],
             }
         }
         with open(CLIENT_SECRETS_FILE, "w") as file:
