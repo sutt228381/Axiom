@@ -4,7 +4,6 @@ import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
-import matplotlib.pyplot as plt
 
 # Constants
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -49,12 +48,23 @@ def authenticate_user():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            creds = flow.run_local_server(port=8080)
+            auth_url, _ = flow.authorization_url(prompt="consent")
+            st.write("### Authorization Required")
+            st.write(f"Please go to the following URL and authorize the application: [Authorize App]({auth_url})")
+            auth_code = st.text_input("Enter the authorization code:")
+            if st.button("Submit Authorization Code"):
+                try:
+                    flow.fetch_token(code=auth_code)
+                    creds = flow.credentials
+                    with open(TOKEN_FILE, "w") as token_file:
+                        token_file.write(creds.to_json())
+                    st.success("Authentication successful!")
+                except Exception as e:
+                    st.error(f"Error during authentication: {e}")
 
-        with open(TOKEN_FILE, "w") as token_file:
-            token_file.write(creds.to_json())
-
-    return build("gmail", "v1", credentials=creds)
+    if creds:
+        return build("gmail", "v1", credentials=creds)
+    return None
 
 
 def fetch_emails(service, query=""):
