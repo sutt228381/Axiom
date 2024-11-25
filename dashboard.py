@@ -1,26 +1,22 @@
 import os
-import logging
+import json
 import streamlit as st
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from urllib.parse import urlencode
+import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+# Paths and constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
-def create_client_secrets():
-    """
-    Create the client_secrets.json file dynamically from Streamlit secrets.
-    """
+def create_client_secrets_file():
     try:
-        client_secrets_data = {
+        client_secrets = {
             "web": {
                 "client_id": st.secrets["web"]["client_id"],
                 "project_id": st.secrets["web"]["project_id"],
@@ -29,110 +25,58 @@ def create_client_secrets():
                 "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
                 "client_secret": st.secrets["web"]["client_secret"],
                 "redirect_uris": st.secrets["web"]["redirect_uris"],
-                "javascript_origins": st.secrets["web"]["javascript_origins"]
+                "javascript_origins": st.secrets["web"]["javascript_origins"],
             }
         }
-        with open(CLIENT_SECRETS_FILE, "w") as file:
-            import json
-            json.dump(client_secrets_data, file)
+        with open(CLIENT_SECRETS_FILE, "w") as f:
+            json.dump(client_secrets, f)
         logger.info("Client secrets file created successfully.")
     except Exception as e:
         logger.error(f"Error creating client_secrets.json: {e}")
         st.error(f"Error creating client_secrets.json: {e}")
 
 def authenticate_user():
-    """
-    Authenticate the user using Gmail API with a redirect method.
-    """
+    create_client_secrets_file()
     try:
-        create_client_secrets()
-        flow = Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-        flow.redirect_uri = st.secrets["web"]["redirect_uris"][0]
-
-        auth_url, state = flow.authorization_url(
-            access_type="offline",
-            include_granted_scopes="true"
+        flow = Flow.from_client_secrets_file(
+            CLIENT_SECRETS_FILE,
+            scopes=["https://www.googleapis.com/auth/gmail.readonly"],
+            redirect_uri=st.secrets["web"]["redirect_uris"][0]
         )
-        st.write("Please authenticate your Gmail account:")
-        st.markdown(f"[Click here to authenticate]({auth_url})")
-        
-        auth_code = st.text_input("Enter the authorization code after authentication:")
-        if st.button("Submit Authorization Code"):
-            flow.fetch_token(code=auth_code)
+        auth_url, _ = flow.authorization_url(prompt="consent")
+        st.write(f"[Click here to authenticate]({auth_url})")
+        code = st.experimental_get_query_params().get("code")
+        if code:
+            flow.fetch_token(code=code[0])
             creds = flow.credentials
             with open(TOKEN_FILE, "w") as token:
                 token.write(creds.to_json())
-            logger.info("Authentication successful.")
+            logger.info("Token saved successfully.")
             return creds
     except Exception as e:
-        logger.error(f"Error during authentication: {e}")
-        st.error(f"Error during authentication: {e}")
+        logger.error(f"Error during Gmail authentication: {e}")
+        st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service, user_email, query):
-    """
-    Fetch emails from the user's Gmail inbox based on a query.
-    """
+def fetch_emails(service):
     try:
-        results = service.users().messages().list(userId=user_email, q=query, maxResults=10).execute()
-        messages = results.get('messages', [])
-
-        email_data = []
+        results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=10).execute()
+        messages = results.get("messages", [])
         for message in messages:
-            msg = service.users().messages().get(userId=user_email, id=message['id']).execute()
-            snippet = msg.get('snippet', '')
-            headers = {header['name']: header['value'] for header in msg['payload']['headers']}
-            subject = headers.get('Subject', 'No Subject')
-            date = headers.get('Date', 'No Date')
-            email_data.append({'Subject': subject, 'Snippet': snippet, 'Date': date})
-
-        return email_data
+            msg = service.users().messages().get(userId="me", id=message["id"]).execute()
+            snippet = msg.get("snippet", "No snippet available")
+            st.write(f"Message: {snippet}")
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
-        return []
-
-def display_dashboard(emails):
-    """
-    Display a dashboard with the retrieved email data.
-    """
-    st.header("Your Gmail Dashboard")
-
-    if emails:
-        for email in emails:
-            st.subheader(email['Subject'])
-            st.text(f"Date: {email['Date']}")
-            st.text_area("Snippet", email['Snippet'], height=100, disabled=True)
-            st.divider()
-    else:
-        st.info("No emails to display.")
 
 def main():
-    """
-    Main function to run the Streamlit app.
-    """
-    st.title("Gmail Email Dashboard")
-    st.write("Authenticate with your Gmail account and filter emails by query.")
-
-    user_email = st.text_input("Enter your Gmail address:")
-    query = st.text_input("Enter a query to search your emails (e.g., 'TDBank'):")
-
-    if st.button("Authenticate and Fetch Emails"):
-        if user_email:
-            creds = authenticate_user()
-            if creds:
-                try:
-                    service = build('gmail', 'v1', credentials=creds)
-                    if query:
-                        emails = fetch_emails(service, user_email, query)
-                        display_dashboard(emails)
-                    else:
-                        st.warning("Please enter a query to search emails.")
-                except Exception as e:
-                    logger.error(f"An error occurred: {e}")
-                    st.error(f"An error occurred: {e}")
-        else:
-            st.warning("Please enter your Gmail address.")
+    st.title("Gmail Dashboard")
+    creds = authenticate_user()
+    if creds:
+        service = build("gmail", "v1", credentials=creds)
+        st.write("Authentication successful. Fetching emails...")
+        fetch_emails(service)
 
 if __name__ == "__main__":
     main()
