@@ -2,9 +2,10 @@ import os
 import logging
 import streamlit as st
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from urllib.parse import urlencode
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,24 +42,32 @@ def create_client_secrets():
 
 def authenticate_user():
     """
-    Authenticate the user using Gmail API.
+    Authenticate the user using Gmail API with a redirect method.
     """
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    try:
+        create_client_secrets()
+        flow = Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+        flow.redirect_uri = st.secrets["web"]["redirect_uris"][0]
 
-    if not creds or not creds.valid:
-        try:
-            create_client_secrets()
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            creds = flow.run_local_server(port=8080)
+        auth_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true"
+        )
+        st.write("Please authenticate your Gmail account:")
+        st.markdown(f"[Click here to authenticate]({auth_url})")
+        
+        auth_code = st.text_input("Enter the authorization code after authentication:")
+        if st.button("Submit Authorization Code"):
+            flow.fetch_token(code=auth_code)
+            creds = flow.credentials
             with open(TOKEN_FILE, "w") as token:
                 token.write(creds.to_json())
             logger.info("Authentication successful.")
-        except Exception as e:
-            logger.error(f"Error during authentication: {e}")
-            st.error(f"Error during authentication: {e}")
-    return creds
+            return creds
+    except Exception as e:
+        logger.error(f"Error during authentication: {e}")
+        st.error(f"Error during authentication: {e}")
+        return None
 
 def fetch_emails(service, user_email, query):
     """
