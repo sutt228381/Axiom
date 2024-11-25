@@ -38,6 +38,9 @@ def create_client_secrets_file():
 def authenticate_user():
     create_client_secrets_file()
     try:
+        if "creds" in st.session_state:
+            return st.session_state["creds"]
+
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=["https://www.googleapis.com/auth/gmail.readonly"],
@@ -49,9 +52,8 @@ def authenticate_user():
         if code:
             flow.fetch_token(code=code[0])
             creds = flow.credentials
-            with open(TOKEN_FILE, "w") as token:
-                token.write(creds.to_json())
-            logger.info("Token saved successfully.")
+            st.session_state["creds"] = creds
+            logger.info("Token saved to session state.")
             return creds
     except Exception as e:
         logger.error(f"Error during Gmail authentication: {e}")
