@@ -58,10 +58,15 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service):
+def fetch_emails(service, query):
     try:
-        results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=10).execute()
+        results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
         messages = results.get("messages", [])
+        if not messages:
+            st.write("No messages found for your query.")
+            return
+        
+        st.write(f"Displaying messages for: '{query}'")
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
@@ -72,11 +77,17 @@ def fetch_emails(service):
 
 def main():
     st.title("Gmail Dashboard")
-    creds = authenticate_user()
-    if creds:
-        service = build("gmail", "v1", credentials=creds)
-        st.write("Authentication successful. Fetching emails...")
-        fetch_emails(service)
+    
+    # User input for email query
+    query = st.text_input("What would you like to view?", value="")
+
+    # Authenticate and fetch emails
+    if st.button("Authenticate and Fetch Emails"):
+        creds = authenticate_user()
+        if creds:
+            service = build("gmail", "v1", credentials=creds)
+            st.write("Authentication successful. Fetching emails...")
+            fetch_emails(service, query)
 
 if __name__ == "__main__":
     main()
