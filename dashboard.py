@@ -1,23 +1,24 @@
 import os
 import json
 import streamlit as st
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from googleapiclient.errors import HttpError
 import logging
 
-# Logging setup
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Constants for token and credentials
-TOKEN_FILE = "token.json"
-CLIENT_SECRETS_FILE = "client_secrets.json"
+# Disable GCE Metadata access
+os.environ["NO_GCE_CHECK"] = "true"
 
-# Step 1: Function to create client_secrets.json dynamically
+# Google API Scopes
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
 def create_client_secrets():
+    """Generate the client_secrets.json file dynamically from Streamlit secrets."""
     try:
         client_secrets = {
             "web": {
@@ -27,78 +28,67 @@ def create_client_secrets():
                 "token_uri": st.secrets["web"]["token_uri"],
                 "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
                 "client_secret": st.secrets["web"]["client_secret"],
-                "redirect_uris": st.secrets["web"]["redirect_uris"],
+                "redirect_uris": st.secrets["web"]["redirect_uris"]
             }
         }
-        with open(CLIENT_SECRETS_FILE, "w") as file:
-            json.dump(client_secrets, file)
+        with open("client_secrets.json", "w") as f:
+            json.dump(client_secrets, f)
         logger.info("Client secrets file created successfully.")
     except Exception as e:
-        st.error(f"Error creating client_secrets.json: {e}")
         logger.error(f"Error creating client_secrets.json: {e}")
+        st.error(f"Error creating client_secrets.json: {e}")
 
-# Step 2: Authenticate user via OAuth
 def authenticate_user():
-    try:
-        creds = None
-        if os.path.exists(TOKEN_FILE):
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE)
+    """Authenticate the user via OAuth and return the Gmail service object."""
+    creds = None
+    token_file = "token.json"
+    
+    # Load existing token if available
+    if os.path.exists(token_file):
+        with open(token_file, "r") as token:
+            creds = Credentials.from_authorized_user_info(json.load(token), SCOPES)
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = Flow.from_client_secrets_file(
-                    CLIENT_SECRETS_FILE,
-                    scopes=["https://www.googleapis.com/auth/gmail.readonly"],
-                    redirect_uri=st.secrets["web"]["redirect_uris"][0],
-                )
-                auth_url, _ = flow.authorization_url(prompt="consent")
-                st.markdown(f"### [Click here to authenticate]({auth_url})")
+    # If credentials are invalid or not available, authenticate the user
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file("client_secrets.json", SCOPES)
+            creds = flow.run_local_server(port=8080)
 
-                if "code" in st.experimental_get_query_params():
-                    auth_code = st.experimental_get_query_params()["code"]
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    with open(TOKEN_FILE, "w") as token:
-                        token.write(creds.to_json())
-                    st.success("Authentication successful!")
-                    return build("gmail", "v1", credentials=creds)
+        # Save credentials for future use
+        with open(token_file, "w") as token:
+            token.write(creds.to_json())
 
-        return build("gmail", "v1", credentials=creds) if creds else None
-    except Exception as e:
-        st.error(f"An error occurred during authentication: {e}")
-        logger.error(f"An error occurred during authentication: {e}")
+    return build('gmail', 'v1', credentials=creds)
 
-# Step 3: Fetch emails from the authenticated Gmail account
 def fetch_emails(service):
+    """Fetch emails using the Gmail API."""
     try:
-        results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=10).execute()
-        messages = results.get("messages", [])
-
-        if not messages:
-            st.write("No messages found.")
-            return
-
-        st.write("Recent emails:")
+        results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=10).execute()
+        messages = results.get('messages', [])
         for message in messages:
-            msg = service.users().messages().get(userId="me", id=message["id"]).execute()
-            st.write(f"Snippet: {msg['snippet']}")
-    except HttpError as error:
-        st.error(f"An error occurred while fetching emails: {error}")
-        logger.error(f"An error occurred while fetching emails: {error}")
+            msg = service.users().messages().get(userId='me', id=message['id']).execute()
+            snippet = msg.get('snippet')
+            st.write(snippet)
+    except Exception as e:
+        logger.error(f"Error fetching emails: {e}")
+        st.error(f"Error fetching emails: {e}")
 
-# Step 4: Streamlit app UI and main function
 def main():
+    """Main function to run the Streamlit app."""
     st.title("Gmail Dashboard")
-    st.write("Authenticate to view your Gmail inbox.")
-
-    create_client_secrets()
-
+    st.write("Authenticate and view your Gmail inbox snippets.")
+    
     if st.button("Authenticate and Fetch Emails"):
-        service = authenticate_user()
-        if service:
-            fetch_emails(service)
+        create_client_secrets()
+        try:
+            service = authenticate_user()
+            if service:
+                fetch_emails(service)
+        except Exception as e:
+            logger.error(f"Error during Gmail authentication: {e}")
+            st.error(f"An error occurred during authentication: {e}")
 
 if __name__ == "__main__":
     main()
