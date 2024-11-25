@@ -104,23 +104,20 @@ def main():
     query = st.text_input("What would you like to view? (e.g., 'TDBank', 'Amazon', etc.)", value="")
 
     # Authenticate or load existing credentials
-    if "creds" not in st.session_state:
+    creds = st.session_state.get("creds", None)
+    if not creds:
         if st.button("Authenticate"):
             creds = authenticate_user()
             if creds:
                 st.session_state.creds = creds
                 st.success("Authentication successful!")
-    else:
-        creds = st.session_state.creds
 
     # Fetch emails using authenticated credentials
-    if creds and st.button("Fetch Emails"):
-        try:
-            service = build("gmail", "v1", credentials=creds)
-            fetch_emails(service, query)
-        except Exception as e:
-            logger.error(f"Error fetching emails: {e}")
-            st.error(f"Error fetching emails: {e}")
+    if creds:
+        service = build("gmail", "v1", credentials=creds)
+        if query:
+            if st.button("Fetch Emails"):
+                fetch_emails(service, query)
 
 if __name__ == "__main__":
     main()
