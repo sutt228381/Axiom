@@ -5,7 +5,6 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -61,12 +60,12 @@ def authenticate_user():
             st.error(f"Error during authentication: {e}")
     return creds
 
-def fetch_emails(service):
+def fetch_emails(service, query):
     """
-    Fetch emails from the user's Gmail inbox.
+    Fetch emails from the user's Gmail inbox based on a query.
     """
     try:
-        results = service.users().messages().list(userId='me', maxResults=10).execute()
+        results = service.users().messages().list(userId='me', q=query, maxResults=10).execute()
         messages = results.get('messages', [])
 
         email_data = []
@@ -104,15 +103,20 @@ def main():
     Main function to run the Streamlit app.
     """
     st.title("Gmail Email Dashboard")
-    st.write("Authenticate with your Gmail account to view your emails.")
+    st.write("Authenticate with your Gmail account and filter emails by query.")
+
+    query = st.text_input("Enter a query to search your emails (e.g., 'TDBank'):")
 
     if st.button("Authenticate and Fetch Emails"):
         creds = authenticate_user()
         if creds:
             try:
                 service = build('gmail', 'v1', credentials=creds)
-                emails = fetch_emails(service)
-                display_dashboard(emails)
+                if query:
+                    emails = fetch_emails(service, query)
+                    display_dashboard(emails)
+                else:
+                    st.warning("Please enter a query to search emails.")
             except Exception as e:
                 logger.error(f"An error occurred: {e}")
                 st.error(f"An error occurred: {e}")
