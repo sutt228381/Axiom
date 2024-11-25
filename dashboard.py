@@ -47,7 +47,7 @@ def fetch_emails(service, query=""):
         messages = response.get('messages', [])
         
         emails = []
-        for message in messages[:100000]:  # Limit to 10 emails
+        for message in messages[:10]:  # Limit to 10 emails
             msg = service.users().messages().get(userId='me', id=message['id']).execute()
             snippet = msg.get('snippet', '')
             emails.append({'id': message['id'], 'snippet': snippet})
