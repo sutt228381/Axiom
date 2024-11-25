@@ -1,5 +1,4 @@
 import os
-import re
 import json
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -18,7 +17,17 @@ def create_client_secrets():
     Creates the client_secrets.json file using Streamlit secrets.
     """
     try:
-        secrets = st.secrets["web"]
+        secrets = {
+            "web": {
+                "client_id": st.secrets["web"]["client_id"],
+                "project_id": st.secrets["web"]["project_id"],
+                "auth_uri": st.secrets["web"]["auth_uri"],
+                "token_uri": st.secrets["web"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
+                "client_secret": st.secrets["web"]["client_secret"],
+                "redirect_uris": st.secrets["web"]["redirect_uris"],
+            }
+        }
         with open(CLIENT_SECRETS_FILE, "w") as f:
             json.dump(secrets, f)
         st.info("Client secrets file created successfully.")
@@ -60,41 +69,12 @@ def fetch_emails(service, query=""):
         for message in messages[:10]:  # Limit to first 10 emails
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "")
-            body = msg.get("payload", {}).get("body", {}).get("data", "")
-            emails.append({"snippet": snippet, "body": body})
+            emails.append({"snippet": snippet})
 
         return emails
     except Exception as e:
         st.error(f"Error fetching emails: {e}")
         return []
-
-
-def extract_data_from_emails(emails):
-    """
-    Extract meaningful data (e.g., amounts, dates) using regex.
-    """
-    transactions = []
-    for email in emails:
-        amounts = re.findall(r"\$\d+\.?\d*", email.get("body", ""))
-        dates = re.findall(r"\b(?:\d{1,2}/\d{1,2}/\d{2,4})\b", email.get("body", ""))
-        transactions.append({"amounts": amounts, "dates": dates})
-
-    return transactions
-
-
-def plot_trends(transactions):
-    """
-    Generate a dynamic trend chart.
-    """
-    amounts = [float(a.strip("$")) for t in transactions for a in t["amounts"]]
-    dates = [d for t in transactions for d in t["dates"]]
-
-    fig, ax = plt.subplots()
-    ax.plot(dates, amounts, marker="o")
-    ax.set_title("Transaction Trends")
-    ax.set_xlabel("Dates")
-    ax.set_ylabel("Amounts")
-    st.pyplot(fig)
 
 
 def main():
@@ -110,13 +90,9 @@ def main():
         service = authenticate_user()
         if service:
             emails = fetch_emails(service, query=prompt)
-            transactions = extract_data_from_emails(emails)
 
-            st.write("### Extracted Data")
-            st.json(transactions)
-
-            st.write("### Trend Analysis")
-            plot_trends(transactions)
+            st.write("### Retrieved Emails")
+            st.json(emails)
 
 
 if __name__ == "__main__":
