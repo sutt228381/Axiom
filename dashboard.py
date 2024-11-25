@@ -58,25 +58,50 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service):
+def fetch_emails(service, query):
     try:
-        results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=10).execute()
+        st.subheader(f"Fetching emails with query: '{query}'")
+        results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
         messages = results.get("messages", [])
+        
+        if not messages:
+            st.info("No messages found.")
+            return
+
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            st.write(f"Message: {snippet}")
+            headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+            subject = headers.get("Subject", "No Subject")
+            date = headers.get("Date", "No Date")
+            st.markdown(f"**Subject:** {subject}")
+            st.markdown(f"**Date:** {date}")
+            st.text_area("Snippet", snippet, height=100, disabled=True)
+            st.divider()
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
 
 def main():
     st.title("Gmail Dashboard")
+    st.write("Enter your email query to filter relevant emails.")
+
+    # Input for email query
+    query = st.text_input("Enter a topic or query to search your emails (e.g., 'TDBank', 'Invoice', etc.):")
+    if not query:
+        st.info("Please enter a query to search your emails.")
+        return
+
+    # Authenticate and fetch emails
     creds = authenticate_user()
     if creds:
-        service = build("gmail", "v1", credentials=creds)
-        st.write("Authentication successful. Fetching emails...")
-        fetch_emails(service)
+        try:
+            service = build("gmail", "v1", credentials=creds)
+            st.success("Authentication successful. Fetching emails...")
+            fetch_emails(service, query)
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            st.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
