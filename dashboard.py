@@ -5,8 +5,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import logging
-import openai  # Import OpenAI library
-import matplotlib.pyplot as plt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,9 +13,6 @@ logger = logging.getLogger(__name__)
 # Paths and constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-
-# Set up OpenAI API key
-openai.api_key = st.secrets["openai"]["api_key"]
 
 def create_client_secrets_file():
     try:
@@ -67,69 +62,21 @@ def fetch_emails(service):
     try:
         results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=10).execute()
         messages = results.get("messages", [])
-        emails = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            emails.append(snippet)
-        return emails
+            st.write(f"Message: {snippet}")
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
-        return []
-
-def analyze_emails_with_openai(emails):
-    try:
-        messages = [{"role": "system", "content": "You are an assistant that summarizes email content into actionable insights."}]
-        messages.append({"role": "user", "content": "Summarize these emails:\n\n" + "\n\n".join(emails)})
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=messages,
-            max_tokens=300,
-            temperature=0.7
-        )
-        return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        logger.error(f"Error analyzing emails: {e}")
-        st.error(f"Error analyzing emails: {e}")
-        return "Could not analyze emails."
-
-def visualize_email_data(emails):
-    try:
-        categories = {"Action Needed": 0, "Upcoming Events": 0, "Other": 0}
-        for email in emails:
-            if "Action" in email:
-                categories["Action Needed"] += 1
-            elif "Event" in email:
-                categories["Upcoming Events"] += 1
-            else:
-                categories["Other"] += 1
-        
-        # Plot data
-        fig, ax = plt.subplots()
-        ax.bar(categories.keys(), categories.values())
-        ax.set_title("Email Categories")
-        ax.set_ylabel("Count")
-        st.pyplot(fig)
-    except Exception as e:
-        logger.error(f"Error visualizing email data: {e}")
-        st.error(f"Error visualizing email data: {e}")
 
 def main():
-    st.title("Gmail Dashboard with Visualizations")
+    st.title("Gmail Dashboard")
     creds = authenticate_user()
     if creds:
         service = build("gmail", "v1", credentials=creds)
         st.write("Authentication successful. Fetching emails...")
-        emails = fetch_emails(service)
-        if emails:
-            st.write("Analyzing emails...")
-            analysis = analyze_emails_with_openai(emails)
-            st.write("Email Analysis:")
-            st.write(analysis)
-            st.write("Visualizing email data...")
-            visualize_email_data(emails)
+        fetch_emails(service)
 
 if __name__ == "__main__":
     main()
