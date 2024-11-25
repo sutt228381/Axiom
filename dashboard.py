@@ -1,155 +1,121 @@
 import os
-import json
 import logging
-from datetime import datetime
+import streamlit as st
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import streamlit as st
-from openai import ChatCompletion
-import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 
-# Logging setup
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Gmail API scopes
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+CLIENT_SECRETS_FILE = "client_secrets.json"
+TOKEN_FILE = "token.json"
 
-# Authenticate user
+def create_client_secrets():
+    """
+    Create the client_secrets.json file dynamically from Streamlit secrets.
+    """
+    try:
+        client_secrets_data = {
+            "web": {
+                "client_id": st.secrets["web"]["client_id"],
+                "project_id": st.secrets["web"]["project_id"],
+                "auth_uri": st.secrets["web"]["auth_uri"],
+                "token_uri": st.secrets["web"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
+                "client_secret": st.secrets["web"]["client_secret"],
+                "redirect_uris": st.secrets["web"]["redirect_uris"],
+                "javascript_origins": st.secrets["web"]["javascript_origins"]
+            }
+        }
+        with open(CLIENT_SECRETS_FILE, "w") as file:
+            import json
+            json.dump(client_secrets_data, file)
+        logger.info("Client secrets file created successfully.")
+    except Exception as e:
+        logger.error(f"Error creating client_secrets.json: {e}")
+        st.error(f"Error creating client_secrets.json: {e}")
+
 def authenticate_user():
+    """
+    Authenticate the user using Gmail API.
+    """
     creds = None
-    token_file = 'token.json'
-
-    if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+    if os.path.exists(TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
 
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file('client_secrets.json', SCOPES)
-        creds = flow.run_local_server(port=8080)
-
-        with open(token_file, 'w') as token:
-            token.write(creds.to_json())
-
+        try:
+            create_client_secrets()
+            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+            creds = flow.run_local_server(port=8080)
+            with open(TOKEN_FILE, "w") as token:
+                token.write(creds.to_json())
+            logger.info("Authentication successful.")
+        except Exception as e:
+            logger.error(f"Error during authentication: {e}")
+            st.error(f"Error during authentication: {e}")
     return creds
 
-# Fetch emails
-def fetch_emails(service, query=""):
+def fetch_emails(service):
+    """
+    Fetch emails from the user's Gmail inbox.
+    """
     try:
-        response = service.users().messages().list(userId='me', q=query).execute()
-        messages = response.get('messages', [])
-        
-        emails = []
-        for message in messages[:10]:  # Limit to 10 emails
+        results = service.users().messages().list(userId='me', maxResults=10).execute()
+        messages = results.get('messages', [])
+
+        email_data = []
+        for message in messages:
             msg = service.users().messages().get(userId='me', id=message['id']).execute()
             snippet = msg.get('snippet', '')
-            emails.append(snippet)
-        
-        return emails
+            headers = {header['name']: header['value'] for header in msg['payload']['headers']}
+            subject = headers.get('Subject', 'No Subject')
+            date = headers.get('Date', 'No Date')
+            email_data.append({'Subject': subject, 'Snippet': snippet, 'Date': date})
+
+        return email_data
     except HttpError as error:
-        logger.error(f"An error occurred while fetching emails: {error}")
+        logger.error(f"An error occurred: {error}")
+        st.error(f"An error occurred: {error}")
         return []
 
-# Analyze and organize emails
-def analyze_emails(emails):
-    categorized_data = {
-        "Actions Needed": [],
-        "Questions": [],
-        "Upcoming Events": [],
-    }
+def display_dashboard(emails):
+    """
+    Display a dashboard with the retrieved email data.
+    """
+    st.header("Your Gmail Dashboard")
 
-    for email in emails:
-        # Use AI to categorize the email
-        response = ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an assistant that categorizes emails based on their content into three categories: 'Actions Needed', 'Questions', and 'Upcoming Events'. Provide concise categorizations."
-                },
-                {"role": "user", "content": email}
-            ]
-        )
-        category = response['choices'][0]['message']['content']
-
-        if "Actions Needed" in category:
-            categorized_data["Actions Needed"].append(email)
-        if "Questions" in category:
-            categorized_data["Questions"].append(email)
-        if "Upcoming Events" in category:
-            categorized_data["Upcoming Events"].append(email)
-
-    return categorized_data
-
-# Display timeline for upcoming events
-def display_timeline(upcoming_events):
-    dates = []
-    descriptions = []
-
-    for event in upcoming_events:
-        try:
-            # Extract the first date mentioned in the event
-            response = ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Extract the first date mentioned in the following text and return it in YYYY-MM-DD format. If no date is found, say 'None'."
-                    },
-                    {"role": "user", "content": event}
-                ]
-            )
-            date = response['choices'][0]['message']['content']
-            if date != "None":
-                dates.append(datetime.strptime(date, "%Y-%m-%d"))
-                descriptions.append(event[:50] + "...")  # Add a snippet of the event
-        except Exception as e:
-            logger.error(f"Error parsing date from event: {e}")
-
-    if dates:
-        # Plot timeline
-        plt.figure(figsize=(10, 5))
-        plt.scatter(dates, [1] * len(dates), color='blue', marker='o')
-        plt.yticks([])
-        for i, (date, desc) in enumerate(zip(dates, descriptions)):
-            plt.text(date, 1.01, desc, rotation=45, ha='right')
-        st.pyplot(plt)
+    if emails:
+        for email in emails:
+            st.subheader(email['Subject'])
+            st.text(f"Date: {email['Date']}")
+            st.text_area("Snippet", email['Snippet'], height=100, disabled=True)
+            st.divider()
     else:
-        st.write("No upcoming events found.")
+        st.info("No emails to display.")
 
-# Main app
 def main():
-    st.title("AI-Powered Email Dashboard")
-    st.write("Fetch and analyze your emails using AI to organize actionable insights.")
+    """
+    Main function to run the Streamlit app.
+    """
+    st.title("Gmail Email Dashboard")
+    st.write("Authenticate with your Gmail account to view your emails.")
 
-    creds = authenticate_user()
-    if not creds:
-        st.error("Authentication failed.")
-        return
-    
-    service = build('gmail', 'v1', credentials=creds)
-    query = st.text_input("Enter a search term (e.g., 'TDBank')", "")
-    
-    if st.button("Fetch and Analyze Emails"):
-        with st.spinner("Fetching and analyzing emails..."):
-            emails = fetch_emails(service, query=query)
-            if not emails:
-                st.warning("No emails found for the given search term.")
-                return
-
-            categorized_data = analyze_emails(emails)
-        
-        st.subheader("Actions Needed")
-        for action in categorized_data["Actions Needed"]:
-            st.write(action)
-        
-        st.subheader("Questions")
-        for question in categorized_data["Questions"]:
-            st.write(question)
-
-        st.subheader("Upcoming Events")
-        display_timeline(categorized_data["Upcoming Events"])
+    if st.button("Authenticate and Fetch Emails"):
+        creds = authenticate_user()
+        if creds:
+            try:
+                service = build('gmail', 'v1', credentials=creds)
+                emails = fetch_emails(service)
+                display_dashboard(emails)
+            except Exception as e:
+                logger.error(f"An error occurred: {e}")
+                st.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
