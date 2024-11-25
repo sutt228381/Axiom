@@ -37,7 +37,7 @@ def create_client_secrets():
         st.error(f"Error creating client_secrets.json: {e}")
         logger.error(f"Error creating client_secrets.json: {e}")
 
-# Step 2: Authenticate user and fetch Google OAuth token
+# Step 2: Authenticate user via OAuth
 def authenticate_user():
     try:
         creds = None
@@ -56,18 +56,14 @@ def authenticate_user():
                 auth_url, _ = flow.authorization_url(prompt="consent")
                 st.markdown(f"### [Click here to authenticate]({auth_url})")
 
-                auth_code = st.text_input("Enter the authorization code here:")
-                if st.button("Submit Authorization Code"):
-                    try:
-                        flow.fetch_token(code=auth_code)
-                        creds = flow.credentials
-                        with open(TOKEN_FILE, "w") as token:
-                            token.write(creds.to_json())
-                        st.success("Authentication successful!")
-                        return build("gmail", "v1", credentials=creds)
-                    except Exception as e:
-                        st.error(f"Failed to fetch token: {e}")
-                        logger.error(f"Failed to fetch token: {e}")
+                if "code" in st.experimental_get_query_params():
+                    auth_code = st.experimental_get_query_params()["code"]
+                    flow.fetch_token(code=auth_code)
+                    creds = flow.credentials
+                    with open(TOKEN_FILE, "w") as token:
+                        token.write(creds.to_json())
+                    st.success("Authentication successful!")
+                    return build("gmail", "v1", credentials=creds)
 
         return build("gmail", "v1", credentials=creds) if creds else None
     except Exception as e:
@@ -96,9 +92,9 @@ def fetch_emails(service):
 def main():
     st.title("Gmail Dashboard")
     st.write("Authenticate to view your Gmail inbox.")
-    
+
     create_client_secrets()
-    
+
     if st.button("Authenticate and Fetch Emails"):
         service = authenticate_user()
         if service:
