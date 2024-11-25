@@ -80,17 +80,16 @@ def fetch_emails(service):
 
 def analyze_emails_with_openai(emails):
     try:
-        prompt = "Summarize the following emails into categories like 'Action Needed', 'Upcoming Events', and 'Other':\n\n"
-        prompt += "\n\n".join(emails)
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
+        messages = [{"role": "system", "content": "You are an assistant that summarizes email content into actionable insights."}]
+        messages.append({"role": "user", "content": "Summarize these emails:\n\n" + "\n\n".join(emails)})
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=messages,
             max_tokens=300,
-            n=1,
-            stop=None,
-            temperature=0.7,
+            temperature=0.7
         )
-        return response.choices[0].text.strip()
+        return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         logger.error(f"Error analyzing emails: {e}")
         st.error(f"Error analyzing emails: {e}")
