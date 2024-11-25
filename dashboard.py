@@ -4,7 +4,10 @@ import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from openai import OpenAI
+import matplotlib.pyplot as plt
 import logging
+from collections import Counter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,6 +17,10 @@ logger = logging.getLogger(__name__)
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
+# OpenAI API key (ensure this is set in Streamlit secrets)
+OPENAI_API_KEY = st.secrets["openai"]["api_key"]
+
+# Create client secrets file
 def create_client_secrets_file():
     try:
         client_secrets = {
@@ -35,12 +42,10 @@ def create_client_secrets_file():
         logger.error(f"Error creating client_secrets.json: {e}")
         st.error(f"Error creating client_secrets.json: {e}")
 
+# Authenticate Gmail API
 def authenticate_user():
     create_client_secrets_file()
     try:
-        if "creds" in st.session_state:
-            return st.session_state["creds"]
-
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=["https://www.googleapis.com/auth/gmail.readonly"],
@@ -52,58 +57,83 @@ def authenticate_user():
         if code:
             flow.fetch_token(code=code[0])
             creds = flow.credentials
-            st.session_state["creds"] = creds
-            logger.info("Token saved to session state.")
+            with open(TOKEN_FILE, "w") as token:
+                token.write(creds.to_json())
+            logger.info("Token saved successfully.")
             return creds
     except Exception as e:
         logger.error(f"Error during Gmail authentication: {e}")
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service, query):
+# Fetch emails
+def fetch_emails(service):
     try:
-        st.subheader(f"Fetching emails with query: '{query}'")
-        results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
+        results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=20).execute()
         messages = results.get("messages", [])
-        
-        if not messages:
-            st.info("No messages found.")
-            return
-
+        email_snippets = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            headers = {h['name']: h['value'] for h in msg['payload']['headers']}
-            subject = headers.get("Subject", "No Subject")
-            date = headers.get("Date", "No Date")
-            st.markdown(f"**Subject:** {subject}")
-            st.markdown(f"**Date:** {date}")
-            st.text_area("Snippet", snippet, height=100, disabled=True)
-            st.divider()
+            email_snippets.append(snippet)
+        return email_snippets
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
+        return []
 
+# Analyze emails with OpenAI
+def analyze_emails(email_snippets):
+    try:
+        openai.api_key = OPENAI_API_KEY
+        summary = []
+        categories = []
+        for snippet in email_snippets:
+            response = openai.Completion.create(
+                model="text-davinci-003",
+                prompt=f"Categorize this email: '{snippet}' and summarize it in one sentence.",
+                max_tokens=50
+            )
+            summary_text = response["choices"][0]["text"].strip()
+            category, summary_snippet = summary_text.split(":")
+            categories.append(category.strip())
+            summary.append({"category": category.strip(), "summary": summary_snippet.strip()})
+        return summary, categories
+    except Exception as e:
+        logger.error(f"Error analyzing emails: {e}")
+        st.error(f"Error analyzing emails: {e}")
+        return [], []
+
+# Visualize email categories
+def visualize_categories(categories):
+    category_counts = Counter(categories)
+    fig, ax = plt.subplots()
+    ax.bar(category_counts.keys(), category_counts.values())
+    ax.set_title("Email Categories")
+    ax.set_ylabel("Number of Emails")
+    ax.set_xlabel("Categories")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+# Display dashboard
 def main():
-    st.title("Gmail Dashboard")
-    st.write("Enter your email query to filter relevant emails.")
+    st.title("Gmail Dashboard with AI-Powered Visualizations")
+    st.write("Enter your email and topic to get started.")
 
-    # Input for email query
-    query = st.text_input("Enter a topic or query to search your emails (e.g., 'TDBank', 'Invoice', etc.):")
-    if not query:
-        st.info("Please enter a query to search your emails.")
-        return
-
-    # Authenticate and fetch emails
     creds = authenticate_user()
     if creds:
-        try:
-            service = build("gmail", "v1", credentials=creds)
-            st.success("Authentication successful. Fetching emails...")
-            fetch_emails(service, query)
-        except Exception as e:
-            logger.error(f"An error occurred: {e}")
-            st.error(f"An error occurred: {e}")
+        service = build("gmail", "v1", credentials=creds)
+        st.write("Authentication successful. Fetching emails...")
+        email_snippets = fetch_emails(service)
+        if email_snippets:
+            st.write("Analyzing emails...")
+            summaries, categories = analyze_emails(email_snippets)
+            st.write("### Summaries of Emails:")
+            for summary in summaries:
+                st.write(f"- **Category**: {summary['category']}")
+                st.write(f"  - {summary['summary']}")
+            st.write("### Visualization of Email Categories")
+            visualize_categories(categories)
 
 if __name__ == "__main__":
     main()
