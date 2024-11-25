@@ -40,7 +40,6 @@ def create_client_secrets():
 # Step 2: Authenticate user and fetch Google OAuth token
 def authenticate_user():
     try:
-        # Check if token file exists
         creds = None
         if os.path.exists(TOKEN_FILE):
             creds = Credentials.from_authorized_user_file(TOKEN_FILE)
@@ -55,16 +54,22 @@ def authenticate_user():
                     redirect_uri=st.secrets["web"]["redirect_uris"][0],
                 )
                 auth_url, _ = flow.authorization_url(prompt="consent")
-                st.markdown(f"### [Authenticate Here]({auth_url})")
-                auth_code = st.text_input("Enter the authorization code:")
-                if st.button("Submit Authorization Code"):
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    # Save the token
-                    with open(TOKEN_FILE, "w") as token:
-                        token.write(creds.to_json())
+                st.markdown(f"### [Click here to authenticate]({auth_url})")
 
-        return build("gmail", "v1", credentials=creds)
+                auth_code = st.text_input("Enter the authorization code here:")
+                if st.button("Submit Authorization Code"):
+                    try:
+                        flow.fetch_token(code=auth_code)
+                        creds = flow.credentials
+                        with open(TOKEN_FILE, "w") as token:
+                            token.write(creds.to_json())
+                        st.success("Authentication successful!")
+                        return build("gmail", "v1", credentials=creds)
+                    except Exception as e:
+                        st.error(f"Failed to fetch token: {e}")
+                        logger.error(f"Failed to fetch token: {e}")
+
+        return build("gmail", "v1", credentials=creds) if creds else None
     except Exception as e:
         st.error(f"An error occurred during authentication: {e}")
         logger.error(f"An error occurred during authentication: {e}")
@@ -75,6 +80,11 @@ def fetch_emails(service):
         results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=10).execute()
         messages = results.get("messages", [])
 
+        if not messages:
+            st.write("No messages found.")
+            return
+
+        st.write("Recent emails:")
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             st.write(f"Snippet: {msg['snippet']}")
@@ -87,10 +97,8 @@ def main():
     st.title("Gmail Dashboard")
     st.write("Authenticate to view your Gmail inbox.")
     
-    # Create the client_secrets.json
     create_client_secrets()
     
-    # Authentication and email fetching
     if st.button("Authenticate and Fetch Emails"):
         service = authenticate_user()
         if service:
