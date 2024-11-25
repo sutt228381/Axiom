@@ -92,14 +92,12 @@ def main():
             st.warning("No emails found for the given search term.")
         else:
             st.success(f"Fetched {len(emails)} emails.")
-            email_options = [f"{email['snippet']}" for email in emails]
-            selected_email = st.selectbox("Select an email to view details", email_options)
-            
-            if selected_email:
-                selected_id = next((email['id'] for email in emails if email['snippet'] == selected_email), None)
-                if selected_id:
-                    subject, snippet = fetch_email_details(service, selected_id)
-                    st.subheader("Email Details")
+            for email in emails:
+                st.subheader("Email Snippet")
+                st.write(email['snippet'])
+                
+                if st.button(f"View Details: {email['id']}", key=email['id']):
+                    subject, snippet = fetch_email_details(service, email['id'])
                     st.write(f"**Subject:** {subject}")
                     st.write(f"**Snippet:** {snippet}")
 
