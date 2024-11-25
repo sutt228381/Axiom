@@ -1,109 +1,57 @@
 import os
 import json
+import logging
 import streamlit as st
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
+from googleapiclient.errors import HttpError
 
-# Constants
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-TOKEN_FILE = "token.json"
-CLIENT_SECRETS_FILE = "client_secrets.json"
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Define Gmail API scope
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-def create_client_secrets():
-    """
-    Creates the client_secrets.json file using Streamlit secrets.
-    """
-    try:
-        secrets = {
-            "web": {
-                "client_id": st.secrets["web"]["client_id"],
-                "project_id": st.secrets["web"]["project_id"],
-                "auth_uri": st.secrets["web"]["auth_uri"],
-                "token_uri": st.secrets["web"]["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
-                "client_secret": st.secrets["web"]["client_secret"],
-                "redirect_uris": st.secrets["web"]["redirect_uris"],
-            }
-        }
-        with open(CLIENT_SECRETS_FILE, "w") as f:
-            json.dump(secrets, f)
-        st.info("Client secrets file created successfully.")
-    except Exception as e:
-        st.error(f"Error creating client_secrets.json: {e}")
-        raise
-
-
+# Function to authenticate the user
 def authenticate_user():
-    """
-    Authenticates the user using the Gmail API.
-    """
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            auth_url, _ = flow.authorization_url(prompt="consent")
-            st.write("### Authorization Required")
-            st.write(f"Please go to the following URL and authorize the application: [Authorize App]({auth_url})")
-            auth_code = st.text_input("Enter the authorization code:")
-            if st.button("Submit Authorization Code"):
-                try:
-                    flow.fetch_token(code=auth_code)
-                    creds = flow.credentials
-                    with open(TOKEN_FILE, "w") as token_file:
-                        token_file.write(creds.to_json())
-                    st.success("Authentication successful!")
-                except Exception as e:
-                    st.error(f"Error during authentication: {e}")
-
-    if creds:
-        return build("gmail", "v1", credentials=creds)
-    return None
-
-
-def fetch_emails(service, query=""):
-    """
-    Fetch relevant emails based on the user's query.
-    """
+    client_secrets_file = "client_secrets.json"
     try:
-        results = service.users().messages().list(userId="me", q=query).execute()
-        messages = results.get("messages", [])
-
-        emails = []
-        for message in messages[:10]:  # Limit to first 10 emails
-            msg = service.users().messages().get(userId="me", id=message["id"]).execute()
-            snippet = msg.get("snippet", "")
-            emails.append({"snippet": snippet})
-
-        return emails
+        flow = InstalledAppFlow.from_client_secrets_file(client_secrets_file, SCOPES)
+        creds = flow.run_local_server(port=8080)
+        return creds
     except Exception as e:
-        st.error(f"Error fetching emails: {e}")
-        return []
+        logger.error(f"Error during authentication: {e}")
+        st.error(f"An error occurred during authentication: {e}")
+        return None
 
+# Function to fetch emails
+def fetch_emails(service):
+    try:
+        results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=10).execute()
+        messages = results.get('messages', [])
+        if not messages:
+            st.write("No messages found.")
+            return
 
+        for message in messages:
+            msg = service.users().messages().get(userId='me', id=message['id']).execute()
+            snippet = msg.get('snippet', 'No snippet available')
+            st.write(f"Email Snippet: {snippet}")
+    except HttpError as error:
+        logger.error(f"An error occurred: {error}")
+        st.error(f"An error occurred: {error}")
+
+# Main function
 def main():
-    st.title("AI-Powered Email Dashboard")
-    st.write("Authenticate and analyze your email inbox dynamically.")
-
-    create_client_secrets()  # Create client_secrets.json
-
-    email = st.text_input("Enter your email address:")
-    prompt = st.text_input("Enter your query (e.g., 'Analyze TD Bank statements'): ")
+    st.title("Gmail Dashboard")
+    st.write("Authenticate and fetch your emails.")
 
     if st.button("Authenticate and Fetch Emails"):
-        service = authenticate_user()
-        if service:
-            emails = fetch_emails(service, query=prompt)
-
-            st.write("### Retrieved Emails")
-            st.json(emails)
-
+        creds = authenticate_user()
+        if creds:
+            service = build('gmail', 'v1', credentials=creds)
+            fetch_emails(service)
 
 if __name__ == "__main__":
     main()
