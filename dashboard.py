@@ -1,11 +1,11 @@
 import os
 import json
-import streamlit as st
 import openai
+import pandas as pd
+import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 import logging
@@ -14,12 +14,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set OpenAI API key
+openai.api_key = st.secrets["openai_api_key"]
+
 # Paths and constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-
-# Set OpenAI API key
-openai.api_key = st.secrets["openai_api_key"]
 
 def create_client_secrets_file():
     try:
@@ -65,77 +65,79 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service, user_query):
+def fetch_emails(service, query=""):
     try:
-        results = service.users().messages().list(userId="me", q=user_query, maxResults=50).execute()
+        results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
         messages = results.get("messages", [])
         email_data = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            email_data.append({
-                "Date": datetime.fromtimestamp(int(msg["internalDate"]) / 1000),
-                "Snippet": snippet
-            })
+            internal_date = int(msg.get("internalDate", 0)) / 1000
+            date = datetime.utcfromtimestamp(internal_date).strftime('%Y-%m-%d')
+            email_data.append({"Date": date, "Snippet": snippet})
         return pd.DataFrame(email_data)
     except HttpError as error:
-        logger.error(f"An error occurred: {error}")
-        st.error(f"An error occurred: {error}")
+        logger.error(f"An error occurred while fetching emails: {error}")
+        st.error(f"An error occurred while fetching emails: {error}")
         return pd.DataFrame()
 
 def analyze_emails_with_openai(email_data):
     try:
-        summaries = []
-        for _, row in email_data.iterrows():
-            prompt = f"Summarize this email: {row['Snippet']}"
-            response = openai.Completion.create(
-                engine="text-davinci-003",
-                prompt=prompt,
-                max_tokens=50
-            )
-            summary = response.choices[0].text.strip()
-            summaries.append(summary)
-        email_data["Summary"] = summaries
-        return email_data
+        analysis_text = "Summarize the following email snippets into key insights, including actions, questions, and timelines:\n"
+        for snippet in email_data["Snippet"]:
+            analysis_text += f"- {snippet}\n"
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "system", "content": "You are an assistant that organizes email content into meaningful insights."},
+                      {"role": "user", "content": analysis_text}]
+        )
+        summary = response["choices"][0]["message"]["content"]
+        return summary
     except Exception as e:
-        logger.error(f"Error analyzing emails: {e}")
+        logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails: {e}")
-        return email_data
+        return None
 
-def display_dashboard(email_data):
-    st.header("Email Insights Dashboard")
-    if email_data.empty:
-        st.write("No data available to display.")
-        return
+def display_dashboard(email_data, analysis_summary):
+    st.subheader("Email Insights Dashboard")
 
-    # Display a bar chart of emails over time
-    email_data["Date"] = pd.to_datetime(email_data["Date"])
-    email_data.set_index("Date", inplace=True)
-    emails_over_time = email_data.resample("D").size()
-
+    # Emails over time
     st.subheader("Emails Over Time")
-    st.line_chart(emails_over_time)
+    email_data["Date"] = pd.to_datetime(email_data["Date"])
+    emails_over_time = email_data["Date"].value_counts().sort_index()
+    plt.figure(figsize=(10, 5))
+    plt.bar(emails_over_time.index, emails_over_time.values)
+    plt.title("Emails Over Time")
+    plt.xlabel("Date")
+    plt.ylabel("Number of Emails")
+    st.pyplot(plt)
 
-    st.subheader("Email Summaries")
-    for index, row in email_data.iterrows():
-        st.write(f"**Date:** {index}")
-        st.write(f"**Summary:** {row['Summary']}")
+    # OpenAI Insights
+    if analysis_summary:
+        st.subheader("AI-Generated Insights")
+        st.write(analysis_summary)
 
 def main():
-    st.title("Gmail AI-Powered Dashboard")
+    st.title("Gmail Insights Dashboard")
+    st.write("Enter your Gmail address and search query to fetch insights.")
 
-    user_email = st.text_input("Enter your email address:", "")
-    user_query = st.text_input("What would you like to analyze? (e.g., 'TD Bank')", "")
+    email_address = st.text_input("Enter your Gmail address:", "")
+    query = st.text_input("Enter a search query (e.g., 'TD Bank statements'):", "")
 
-    if st.button("Authenticate and Fetch Emails"):
+    if st.button("Fetch and Analyze Emails"):
         creds = authenticate_user()
         if creds:
             service = build("gmail", "v1", credentials=creds)
-            st.write("Authentication successful. Fetching emails...")
-            email_data = fetch_emails(service, user_query)
+            st.write("Fetching emails...")
+            email_data = fetch_emails(service, query)
             if not email_data.empty:
-                email_data = analyze_emails_with_openai(email_data)
-                display_dashboard(email_data)
+                st.write(f"Fetched {len(email_data)} emails.")
+                analysis_summary = analyze_emails_with_openai(email_data)
+                display_dashboard(email_data, analysis_summary)
+            else:
+                st.write("No emails found for the given query.")
 
 if __name__ == "__main__":
     main()
