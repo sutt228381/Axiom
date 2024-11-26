@@ -86,17 +86,20 @@ def fetch_emails(service, query=""):
 def display_dashboard(email_data):
     st.header("Email Insights Dashboard")
 
-    # Convert the "Date" column to datetime and set as index
+    # Ensure "Date" is properly formatted as datetime
     if 'Date' in email_data.columns:
         email_data['Date'] = pd.to_datetime(email_data['Date'], errors='coerce')
-        email_data = email_data.dropna(subset=['Date'])  # Drop rows with invalid dates
-        email_data.set_index('Date', inplace=True)
+        email_data = email_data.dropna(subset=['Date'])  # Remove rows with invalid dates
+        email_data.set_index('Date', inplace=True)  # Set datetime as index
 
-    # Visualization: Emails over time
     if not email_data.empty:
-        emails_over_time = email_data.resample('D').size()
+        # Emails over time visualization
         st.subheader("Emails Over Time")
-        st.bar_chart(emails_over_time)
+        if not email_data.index.is_all_dates:
+            st.warning("Dates are not properly formatted. Unable to generate timeline.")
+        else:
+            emails_over_time = email_data.resample('D').size()
+            st.line_chart(emails_over_time)
 
         # Top senders visualization
         st.subheader("Top Email Senders")
