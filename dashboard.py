@@ -4,7 +4,9 @@ import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import matplotlib.pyplot as plt
 import logging
+import openai
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -13,8 +15,9 @@ logger = logging.getLogger(__name__)
 # Paths and constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
+openai.api_key = st.secrets["openai"]["api_key"]
 
-# Function to create the client_secrets.json file
+# Create client_secrets.json dynamically
 def create_client_secrets_file():
     try:
         client_secrets = {
@@ -36,14 +39,14 @@ def create_client_secrets_file():
         logger.error(f"Error creating client_secrets.json: {e}")
         st.error(f"Error creating client_secrets.json: {e}")
 
-# Function to authenticate user with Gmail API
+# Authenticate Gmail user
 def authenticate_user():
     create_client_secrets_file()
     try:
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=["https://www.googleapis.com/auth/gmail.readonly"],
-            redirect_uri=st.secrets["web"]["redirect_uris"][0]
+            redirect_uri=st.secrets["web"]["redirect_uris"][0],
         )
         auth_url, _ = flow.authorization_url(prompt="consent")
         st.write(f"[Click here to authenticate]({auth_url})")
@@ -60,64 +63,45 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-# Function to load credentials from the token file
-def load_credentials():
+# Fetch emails
+def fetch_emails(service, query=""):
     try:
-        if os.path.exists(TOKEN_FILE):
-            with open(TOKEN_FILE, "r") as token:
-                creds = json.load(token)
-            logger.info("Loaded credentials from token file.")
-            return creds
-    except Exception as e:
-        logger.error(f"Error loading credentials: {e}")
-        return None
-
-# Function to fetch and display emails
-def fetch_emails(service, query):
-    try:
-        results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
+        results = service.users().messages().list(userId="me", q=query, maxResults=20).execute()
         messages = results.get("messages", [])
-        if not messages:
-            st.write("No messages found for your query.")
-            return
-        
-        st.write(f"Displaying messages for: '{query}'")
+        email_data = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            st.write(f"Message: {snippet}")
+            email_data.append(snippet)
+        return email_data
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
+        return []
 
-# Main app logic
-def main():
-    st.title("Gmail Dashboard")
+# Analyze and categorize emails
+def analyze_emails(emails):
+    categorized_data = {"Actions Needed": [], "Questions": [], "Upcoming Events": []}
+    for email in emails:
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Classify the email into one of three categories: Actions Needed, Questions, or Upcoming Events. Provide key insights for a dashboard."},
+                    {"role": "user", "content": email},
+                ],
+            )
+            category, insight = response.choices[0].message["content"].split(":")
+            categorized_data[category.strip()].append(insight.strip())
+        except Exception as e:
+            logger.error(f"Error analyzing email: {e}")
+            categorized_data["Actions Needed"].append(email)
+    return categorized_data
 
-    # Input for email address
-    user_email = st.text_input("Enter your email address to authenticate:")
-    if not user_email:
-        st.warning("Please enter your email address to proceed.")
-        return
-
-    # Input for query
-    query = st.text_input("What would you like to view? (e.g., 'TDBank', 'Amazon', etc.)", value="")
-
-    # Authenticate or load existing credentials
-    creds = st.session_state.get("creds", None)
-    if not creds:
-        if st.button("Authenticate"):
-            creds = authenticate_user()
-            if creds:
-                st.session_state.creds = creds
-                st.success("Authentication successful!")
-
-    # Fetch emails using authenticated credentials
-    if creds:
-        service = build("gmail", "v1", credentials=creds)
-        if query:
-            if st.button("Fetch Emails"):
-                fetch_emails(service, query)
-
-if __name__ == "__main__":
-    main()
+# Display categorized emails with visualizations
+def display_dashboard(categorized_data):
+    for category, items in categorized_data.items():
+        st.subheader(category)
+        for item in items:
+            st.write(item)
+        if category == "Upcoming Events
