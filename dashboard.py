@@ -1,12 +1,12 @@
 import os
 import json
 import streamlit as st
+import openai
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import openai
-import matplotlib.pyplot as plt
 import pandas as pd
+import matplotlib.pyplot as plt
 from datetime import datetime
 import logging
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
-# OpenAI API Key (to be added to secrets)
+# Set OpenAI API key
 openai.api_key = st.secrets["openai_api_key"]
 
 def create_client_secrets_file():
@@ -65,70 +65,77 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service, query=""):
+def fetch_emails(service, user_query):
     try:
-        results = service.users().messages().list(userId="me", q=query, maxResults=20).execute()
+        results = service.users().messages().list(userId="me", q=user_query, maxResults=50).execute()
         messages = results.get("messages", [])
         email_data = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            email_data.append({"id": message["id"], "snippet": snippet})
+            email_data.append({
+                "Date": datetime.fromtimestamp(int(msg["internalDate"]) / 1000),
+                "Snippet": snippet
+            })
         return pd.DataFrame(email_data)
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
         return pd.DataFrame()
 
-def analyze_emails(email_data):
+def analyze_emails_with_openai(email_data):
     try:
-        combined_snippets = " ".join(email_data["snippet"].tolist())
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a data analyst assistant."},
-                {"role": "user", "content": f"Analyze the following email content: {combined_snippets}"}
-            ]
-        )
-        return response["choices"][0]["message"]["content"]
+        summaries = []
+        for _, row in email_data.iterrows():
+            prompt = f"Summarize this email: {row['Snippet']}"
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=prompt,
+                max_tokens=50
+            )
+            summary = response.choices[0].text.strip()
+            summaries.append(summary)
+        email_data["Summary"] = summaries
+        return email_data
     except Exception as e:
         logger.error(f"Error analyzing emails: {e}")
         st.error(f"Error analyzing emails: {e}")
-        return None
+        return email_data
 
-def generate_visualizations(email_data):
-    try:
-        email_data["snippet_length"] = email_data["snippet"].apply(len)
-        fig, ax = plt.subplots()
-        ax.bar(email_data.index, email_data["snippet_length"], color="blue")
-        ax.set_title("Email Snippet Lengths")
-        ax.set_xlabel("Email Index")
-        ax.set_ylabel("Length of Snippet")
-        st.pyplot(fig)
-    except Exception as e:
-        logger.error(f"Error generating visualizations: {e}")
-        st.error(f"Error generating visualizations: {e}")
+def display_dashboard(email_data):
+    st.header("Email Insights Dashboard")
+    if email_data.empty:
+        st.write("No data available to display.")
+        return
+
+    # Display a bar chart of emails over time
+    email_data["Date"] = pd.to_datetime(email_data["Date"])
+    email_data.set_index("Date", inplace=True)
+    emails_over_time = email_data.resample("D").size()
+
+    st.subheader("Emails Over Time")
+    st.line_chart(emails_over_time)
+
+    st.subheader("Email Summaries")
+    for index, row in email_data.iterrows():
+        st.write(f"**Date:** {index}")
+        st.write(f"**Summary:** {row['Summary']}")
 
 def main():
-    st.title("Enhanced Gmail Dashboard")
-    email = st.text_input("Enter your email address:")
-    query = st.text_input("What would you like to search for in your inbox?")
+    st.title("Gmail AI-Powered Dashboard")
+
+    user_email = st.text_input("Enter your email address:", "")
+    user_query = st.text_input("What would you like to analyze? (e.g., 'TD Bank')", "")
+
     if st.button("Authenticate and Fetch Emails"):
         creds = authenticate_user()
         if creds:
             service = build("gmail", "v1", credentials=creds)
-            st.write(f"Fetching emails for query: {query}")
-            email_data = fetch_emails(service, query=query)
+            st.write("Authentication successful. Fetching emails...")
+            email_data = fetch_emails(service, user_query)
             if not email_data.empty:
-                st.write("Here are your emails:")
-                for _, row in email_data.iterrows():
-                    st.write(f"- {row['snippet']}")
-                st.write("Analyzing emails...")
-                insights = analyze_emails(email_data)
-                st.write("### AI-Generated Insights:")
-                st.write(insights)
-                st.write("### Visualization:")
-                generate_visualizations(email_data)
+                email_data = analyze_emails_with_openai(email_data)
+                display_dashboard(email_data)
 
 if __name__ == "__main__":
     main()
