@@ -6,6 +6,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import matplotlib.pyplot as plt
+import pandas as pd
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -61,64 +62,75 @@ def authenticate_user():
 
 def fetch_emails(service, query):
     try:
-        results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
+        results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
         messages = results.get("messages", [])
-        email_snippets = []
+        email_data = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            email_snippets.append(snippet)
-        return email_snippets
+            headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+            email_data.append({
+                "From": headers.get("From", "Unknown"),
+                "Subject": headers.get("Subject", "No Subject"),
+                "Snippet": snippet,
+                "Date": headers.get("Date", "Unknown")
+            })
+        return pd.DataFrame(email_data)
     except HttpError as error:
         logger.error(f"An error occurred: {error}")
         st.error(f"An error occurred: {error}")
-        return []
+        return pd.DataFrame()
 
-def analyze_emails(emails):
-    categorized_data = {"Actions Needed": [], "Questions": [], "Upcoming Events": []}
-    for email in emails:
-        if "question" in email.lower():
-            categorized_data["Questions"].append(email)
-        elif "event" in email.lower() or "schedule" in email.lower():
-            categorized_data["Upcoming Events"].append(email)
-        else:
-            categorized_data["Actions Needed"].append(email)
-    return categorized_data
+def display_dashboard(email_data):
+    st.subheader("Email Dashboard")
+    if email_data.empty:
+        st.write("No emails found.")
+        return
 
-# Display categorized emails with visualizations
-def display_dashboard(categorized_data):
-    for category, items in categorized_data.items():
-        st.subheader(category)
-        for item in items:
-            st.write(item)
-        if category == "Upcoming Events":
-            # Example: Visualize upcoming events in a timeline
-            if items:
-                st.write("Upcoming Events Timeline:")
-                fig, ax = plt.subplots()
-                event_dates = [f"Event {i+1}" for i in range(len(items))]
-                ax.barh(event_dates, range(len(items)))
-                ax.set_xlabel("Event Index")
-                st.pyplot(fig)
+    # Summary Statistics
+    st.write(f"Total Emails: {len(email_data)}")
+    st.write(f"Unique Senders: {email_data['From'].nunique()}")
+    
+    # Bar Chart: Emails per Sender
+    sender_counts = email_data['From'].value_counts().head(10)
+    st.bar_chart(sender_counts)
+
+    # Line Chart: Emails Over Time
+    email_data['Date'] = pd.to_datetime(email_data['Date'], errors='coerce')
+    emails_over_time = email_data.set_index('Date').resample('D').size()
+    st.line_chart(emails_over_time)
+
+    # Table of Emails
+    st.dataframe(email_data)
+
+def analyze_emails(email_data):
+    st.subheader("Categorized Emails")
+    categories = {
+        "Actions Needed": email_data[email_data["Snippet"].str.contains("action", na=False, case=False)],
+        "Questions": email_data[email_data["Snippet"].str.contains("question", na=False, case=False)],
+        "Upcoming Events": email_data[email_data["Snippet"].str.contains("event|schedule", na=False, case=False)]
+    }
+    for category, data in categories.items():
+        st.write(f"### {category}")
+        st.dataframe(data)
 
 def main():
-    st.title("Gmail Dashboard")
-    st.write("Enter your email address and the topic you'd like to search:")
+    st.title("Gmail BI Dashboard")
+    st.write("Enter your email and search query:")
     email = st.text_input("Email Address")
-    topic = st.text_input("Search Topic (e.g., 'bank statements', 'events')")
-    
-    if email and st.button("Authenticate and Search"):
+    query = st.text_input("Search Query (e.g., 'bank statements', 'meetings')")
+
+    if email and st.button("Authenticate and Fetch Emails"):
         creds = authenticate_user()
         if creds:
             service = build("gmail", "v1", credentials=creds)
             st.write("Authentication successful. Fetching emails...")
-            emails = fetch_emails(service, topic)
-            if emails:
-                st.write(f"Found {len(emails)} emails.")
-                categorized_data = analyze_emails(emails)
-                display_dashboard(categorized_data)
+            email_data = fetch_emails(service, query)
+            if not email_data.empty:
+                display_dashboard(email_data)
+                analyze_emails(email_data)
             else:
-                st.write("No emails found matching the query.")
+                st.write("No relevant emails found.")
 
 if __name__ == "__main__":
     main()
