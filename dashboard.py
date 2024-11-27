@@ -84,25 +84,6 @@ def fetch_emails(service, query):
         st.error(f"An error occurred: {error}")
         return pd.DataFrame()
 
-def analyze_emails(email_data):
-    """
-    Uses OpenAI to analyze email snippets and generate insights.
-    """
-    try:
-        email_text = "\n".join(email_data["Snippet"].tolist())
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an assistant helping to analyze email content."},
-                {"role": "user", "content": f"Analyze these emails and generate a report:\n{email_text}"}
-            ]
-        )
-        return response["choices"][0]["message"]["content"]
-    except Exception as e:
-        logger.error(f"Error analyzing emails: {e}")
-        st.error(f"Error analyzing emails: {e}")
-        return "No analysis available."
-
 def display_dashboard(email_data):
     """
     Displays a BI dashboard based on email data.
@@ -141,9 +122,6 @@ def main():
             service = build("gmail", "v1", credentials=creds)
             email_data = fetch_emails(service, query)
             if not email_data.empty:
-                analysis = analyze_emails(email_data)
-                st.write("### Email Analysis")
-                st.write(analysis)
                 display_dashboard(email_data)
 
 if __name__ == "__main__":
