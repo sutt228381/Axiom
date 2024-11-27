@@ -1,27 +1,26 @@
 import os
 import json
-import openai
-import pandas as pd
 import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import matplotlib.pyplot as plt
-from datetime import datetime
+import openai
 import logging
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set OpenAI API key
-openai.api_key = st.secrets["openai_api_key"]
-
-# Paths and constants
+# Constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
 def create_client_secrets_file():
+    """
+    Dynamically creates the client_secrets.json file using Streamlit secrets.
+    """
     try:
         client_secrets = {
             "web": {
@@ -32,7 +31,6 @@ def create_client_secrets_file():
                 "auth_provider_x509_cert_url": st.secrets["web"]["auth_provider_x509_cert_url"],
                 "client_secret": st.secrets["web"]["client_secret"],
                 "redirect_uris": st.secrets["web"]["redirect_uris"],
-                "javascript_origins": st.secrets["web"]["javascript_origins"],
             }
         }
         with open(CLIENT_SECRETS_FILE, "w") as f:
@@ -43,6 +41,9 @@ def create_client_secrets_file():
         st.error(f"Error creating client_secrets.json: {e}")
 
 def authenticate_user():
+    """
+    Handles Gmail API authentication via OAuth.
+    """
     create_client_secrets_file()
     try:
         flow = Flow.from_client_secrets_file(
@@ -65,48 +66,54 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
-def fetch_emails(service, query=""):
+def fetch_emails(service, query):
+    """
+    Fetches emails from the Gmail inbox based on the given query.
+    """
     try:
-        results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
+        results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
         messages = results.get("messages", [])
         email_data = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
             snippet = msg.get("snippet", "No snippet available")
-            internal_date = int(msg.get("internalDate", 0)) / 1000
-            date = datetime.utcfromtimestamp(internal_date).strftime('%Y-%m-%d')
-            email_data.append({"Date": date, "Snippet": snippet})
+            email_data.append({"Snippet": snippet, "Date": pd.to_datetime(msg["internalDate"], unit="ms")})
         return pd.DataFrame(email_data)
     except HttpError as error:
-        logger.error(f"An error occurred while fetching emails: {error}")
-        st.error(f"An error occurred while fetching emails: {error}")
+        logger.error(f"An error occurred: {error}")
+        st.error(f"An error occurred: {error}")
         return pd.DataFrame()
 
-def analyze_emails_with_openai(email_data):
+def analyze_emails(email_data):
+    """
+    Uses OpenAI to analyze email snippets and generate insights.
+    """
     try:
-        analysis_text = "Summarize the following email snippets into key insights, including actions, questions, and timelines:\n"
-        for snippet in email_data["Snippet"]:
-            analysis_text += f"- {snippet}\n"
-
+        email_text = "\n".join(email_data["Snippet"].tolist())
         response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": "You are an assistant that organizes email content into meaningful insights."},
-                      {"role": "user", "content": analysis_text}]
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an assistant helping to analyze email content."},
+                {"role": "user", "content": f"Analyze these emails and generate a report:\n{email_text}"}
+            ]
         )
-        summary = response["choices"][0]["message"]["content"]
-        return summary
+        return response["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error(f"Error analyzing emails with OpenAI: {e}")
+        logger.error(f"Error analyzing emails: {e}")
         st.error(f"Error analyzing emails: {e}")
-        return None
+        return "No analysis available."
 
-def display_dashboard(email_data, analysis_summary):
-    st.subheader("Email Insights Dashboard")
+def display_dashboard(email_data):
+    """
+    Displays a BI dashboard based on email data.
+    """
+    if email_data.empty:
+        st.write("No emails to display.")
+        return
 
     # Emails over time
-    st.subheader("Emails Over Time")
-    email_data["Date"] = pd.to_datetime(email_data["Date"])
-    emails_over_time = email_data["Date"].value_counts().sort_index()
+    email_data.set_index("Date", inplace=True)
+    emails_over_time = email_data.resample("D").size()
     plt.figure(figsize=(10, 5))
     plt.bar(emails_over_time.index, emails_over_time.values)
     plt.title("Emails Over Time")
@@ -114,30 +121,30 @@ def display_dashboard(email_data, analysis_summary):
     plt.ylabel("Number of Emails")
     st.pyplot(plt)
 
-    # OpenAI Insights
-    if analysis_summary:
-        st.subheader("AI-Generated Insights")
-        st.write(analysis_summary)
+    # Show email snippets
+    st.write("### Email Snippets")
+    for _, row in email_data.iterrows():
+        st.write(f"- {row['Snippet']}")
 
 def main():
-    st.title("Gmail Insights Dashboard")
-    st.write("Enter your Gmail address and search query to fetch insights.")
+    """
+    Main function to run the Streamlit app.
+    """
+    st.title("Dynamic Email Dashboard")
+    openai.api_key = st.secrets["openai_api_key"]
 
-    email_address = st.text_input("Enter your Gmail address:", "")
-    query = st.text_input("Enter a search query (e.g., 'TD Bank statements'):", "")
-
-    if st.button("Fetch and Analyze Emails"):
+    email = st.text_input("Enter your email address")
+    query = st.text_input("What would you like to search for in your inbox?")
+    if email and query:
         creds = authenticate_user()
         if creds:
             service = build("gmail", "v1", credentials=creds)
-            st.write("Fetching emails...")
             email_data = fetch_emails(service, query)
             if not email_data.empty:
-                st.write(f"Fetched {len(email_data)} emails.")
-                analysis_summary = analyze_emails_with_openai(email_data)
-                display_dashboard(email_data, analysis_summary)
-            else:
-                st.write("No emails found for the given query.")
+                analysis = analyze_emails(email_data)
+                st.write("### Email Analysis")
+                st.write(analysis)
+                display_dashboard(email_data)
 
 if __name__ == "__main__":
     main()
