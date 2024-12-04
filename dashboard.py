@@ -36,16 +36,23 @@ def create_client_secrets_file():
 
 def load_token():
     if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as token:
+        with open(TOKEN_FILE, "r") as token_file:
             logger.info("Token loaded from file.")
-            return json.load(token)
+            return json.load(token_file)
     return None
 
 def authenticate_user():
     create_client_secrets_file()
-    creds = load_token()
-    if creds:
-        return creds
+    token_data = load_token()
+
+    if token_data:
+        try:
+            from google.oauth2.credentials import Credentials
+            creds = Credentials.from_authorized_user_info(token_data)
+            return creds
+        except Exception as e:
+            logger.error(f"Error loading token: {e}")
+            st.error(f"Error loading token: {e}")
 
     try:
         flow = Flow.from_client_secrets_file(
@@ -61,8 +68,8 @@ def authenticate_user():
         if code:
             flow.fetch_token(code=code[0])
             creds = flow.credentials
-            with open(TOKEN_FILE, "w") as token:
-                token.write(creds.to_json())
+            with open(TOKEN_FILE, "w") as token_file:
+                token_file.write(creds.to_json())
             logger.info("Token saved successfully.")
             return creds
     except Exception as e:
