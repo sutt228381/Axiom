@@ -1,10 +1,10 @@
 import os
 import json
-import openai
 import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import openai
 import logging
 
 # Configure logging
@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 # Constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-
-# OpenAI API Setup
 openai.api_key = st.secrets["openai_api_key"]
 
 def create_client_secrets_file():
@@ -68,7 +66,8 @@ def authenticate_user():
         st.write(f"[Click here to authenticate]({auth_url})")
 
         # Wait for user to authenticate
-        code = st.experimental_get_query_params().get("code")
+        query_params = st.query_params
+        code = query_params.get("code")
         if code:
             flow.fetch_token(code=code[0])
             creds = flow.credentials
@@ -101,28 +100,23 @@ def fetch_emails(service, query):
         return []
 
 def analyze_emails_with_ai(emails):
+    st.subheader("AI Analysis of Emails")
+    if not emails:
+        st.write("No emails available for analysis.")
+        return
+
     try:
-        if not emails:
-            st.write("No emails to analyze.")
-            return
-
-        # Prepare the content for AI analysis
-        email_content = "\n\n".join(
-            f"Subject: {email['Subject']}\nSnippet: {email['Snippet']}" for email in emails
-        )
-
-        st.subheader("AI Analysis of Emails")
+        messages = "\n\n".join([email["Snippet"] for email in emails])
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an assistant that organizes and analyzes email data."},
-                {"role": "user", "content": f"Organize and summarize the following emails: {email_content}"}
+                {"role": "system", "content": "You are an AI assistant. Summarize the content of the following emails."},
+                {"role": "user", "content": messages},
             ]
         )
-        analysis = response.choices[0].message['content']
+        analysis = response["choices"][0]["message"]["content"]
         st.write(analysis)
-
-    except Exception as e:
+    except openai.error.OpenAIError as e:
         logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails with OpenAI: {e}")
 
@@ -156,7 +150,7 @@ def main():
 
     # Step 2: Query input
     query = st.text_input("Enter a search query (e.g., 'bank statements'):")
-    if query and st.button("Fetch and Analyze Emails"):
+    if query and st.button("Fetch Emails"):
         st.write("Fetching emails...")
         emails = fetch_emails(service, query)
         display_emails(emails)
