@@ -127,7 +127,12 @@ def main():
         st.warning("Please enter a search query.")
         return
 
-    creds = authenticate_user()
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r") as token_file:
+            creds = json.load(token_file)
+    else:
+        creds = authenticate_user()
+    
     if creds:
         service = build("gmail", "v1", credentials=creds)
         st.write("Authentication successful. Fetching emails...")
