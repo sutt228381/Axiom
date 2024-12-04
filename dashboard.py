@@ -122,7 +122,7 @@ def analyze_emails_with_ai(emails):
         analysis = response['choices'][0]['message']['content']
         st.write(analysis)
 
-    except openai.error.InvalidRequestError as e:
+    except Exception as e:
         logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails with OpenAI: {e}")
 
