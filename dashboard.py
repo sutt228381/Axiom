@@ -109,8 +109,13 @@ def main():
     if not creds:
         return
 
-    service = build("gmail", "v1", credentials=creds)
-    st.success("Authentication successful!")
+    try:
+        service = build("gmail", "v1", credentials=creds)
+        st.success("Authentication successful!")
+    except Exception as e:
+        logger.error(f"Error creating Gmail service: {e}")
+        st.error(f"Error creating Gmail service: {e}")
+        return
 
     # Step 2: Query input
     query = st.text_input("Enter a search query (e.g., 'bank statements'):")
