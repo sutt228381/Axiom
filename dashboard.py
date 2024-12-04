@@ -119,7 +119,7 @@ def analyze_emails_with_ai(emails):
                 {"role": "user", "content": f"Organize and summarize the following emails: {email_content}"}
             ]
         )
-        analysis = response['choices'][0]['message']['content']
+        analysis = response.choices[0].message['content']
         st.write(analysis)
 
     except Exception as e:
