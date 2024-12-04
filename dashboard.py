@@ -1,5 +1,6 @@
 import os
 import json
+import openai
 import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -13,6 +14,9 @@ logger = logging.getLogger(__name__)
 # Constants
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
+
+# OpenAI API Setup
+openai.api_key = st.secrets["openai_api_key"]
 
 def create_client_secrets_file():
     try:
@@ -96,6 +100,32 @@ def fetch_emails(service, query):
         st.error(f"An error occurred: {error}")
         return []
 
+def analyze_emails_with_ai(emails):
+    try:
+        if not emails:
+            st.write("No emails to analyze.")
+            return
+
+        # Prepare the content for AI analysis
+        email_content = "\n\n".join(
+            f"Subject: {email['Subject']}\nSnippet: {email['Snippet']}" for email in emails
+        )
+
+        st.subheader("AI Analysis of Emails")
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an assistant that organizes and analyzes email data."},
+                {"role": "user", "content": f"Organize and summarize the following emails: {email_content}"}
+            ]
+        )
+        analysis = response['choices'][0]['message']['content']
+        st.write(analysis)
+
+    except Exception as e:
+        logger.error(f"Error analyzing emails: {e}")
+        st.error(f"Error analyzing emails: {e}")
+
 def display_emails(emails):
     if not emails:
         st.write("No emails found.")
@@ -126,10 +156,11 @@ def main():
 
     # Step 2: Query input
     query = st.text_input("Enter a search query (e.g., 'bank statements'):")
-    if query and st.button("Fetch Emails"):
+    if query and st.button("Fetch and Analyze Emails"):
         st.write("Fetching emails...")
         emails = fetch_emails(service, query)
         display_emails(emails)
+        analyze_emails_with_ai(emails)
 
 if __name__ == "__main__":
     main()
