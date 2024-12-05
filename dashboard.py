@@ -66,7 +66,7 @@ def authenticate_user():
         st.write(f"[Click here to authenticate]({auth_url})")
 
         # Wait for user to authenticate
-        query_params = st.query_params
+        query_params = st.experimental_get_query_params()  # Will need to replace with `st.query_params` in the future.
         code = query_params.get("code")
         if code:
             flow.fetch_token(code=code[0])
