@@ -116,7 +116,7 @@ def analyze_emails_with_ai(emails):
         )
         analysis = response["choices"][0]["message"]["content"]
         st.write(analysis)
-    except openai.error.OpenAIError as e:
+    except Exception as e:  # Generic exception handler for OpenAI errors
         logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails with OpenAI: {e}")
 
