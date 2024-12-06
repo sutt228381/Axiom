@@ -128,10 +128,10 @@ def analyze_emails_with_ai(emails):
             ]
         )
 
-        ai_summary = response.choices[0].message["content"]
+        ai_summary = response["choices"][0]["message"]["content"]
         st.write(ai_summary)
 
-    except openai.error.OpenAIError as e:
+    except openai.OpenAIError as e:
         logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails with OpenAI: {e}")
 
