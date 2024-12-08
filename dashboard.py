@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
-# Create client_secrets.json dynamically
+# Function to create client secrets file
 def create_client_secrets_file():
     try:
         client_secrets = {
@@ -36,28 +36,9 @@ def create_client_secrets_file():
         logger.error(f"Error creating client_secrets.json: {e}")
         st.error(f"Error creating client_secrets.json: {e}")
 
-# Load token from file
-def load_token():
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as token_file:
-            logger.info("Token loaded from file.")
-            return json.load(token_file)
-    return None
-
-# Authenticate user
+# Function to authenticate user
 def authenticate_user():
     create_client_secrets_file()
-    token_data = load_token()
-
-    if token_data:
-        try:
-            from google.oauth2.credentials import Credentials
-            creds = Credentials.from_authorized_user_info(token_data)
-            return creds
-        except Exception as e:
-            logger.error(f"Error loading token: {e}")
-            st.error(f"Error loading token: {e}")
-
     try:
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
@@ -66,21 +47,16 @@ def authenticate_user():
         )
         auth_url, _ = flow.authorization_url(prompt="consent")
         st.write(f"[Click here to authenticate]({auth_url})")
-
         code = st.experimental_get_query_params().get("code")
         if code:
             flow.fetch_token(code=code[0])
-            creds = flow.credentials
-            with open(TOKEN_FILE, "w") as token_file:
-                token_file.write(creds.to_json())
-            logger.info("Token saved successfully.")
-            return creds
+            return flow.credentials
     except Exception as e:
-        logger.error(f"Error during Gmail authentication: {e}")
-        st.error(f"Error during Gmail authentication: {e}")
+        logger.error(f"Error during authentication: {e}")
+        st.error(f"Error during authentication: {e}")
         return None
 
-# Fetch emails based on query
+# Function to fetch emails
 def fetch_emails(service, query):
     try:
         results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
@@ -88,61 +64,49 @@ def fetch_emails(service, query):
         email_data = []
         for message in messages:
             msg = service.users().messages().get(userId="me", id=message["id"]).execute()
-            subject = next(
-                (header["value"] for header in msg["payload"]["headers"] if header["name"] == "Subject"), 
-                "No Subject"
-            )
+            subject = next((header["value"] for header in msg["payload"]["headers"] if header["name"] == "Subject"), "No Subject")
             snippet = msg.get("snippet", "No snippet available")
             email_data.append({"Subject": subject, "Snippet": snippet})
         return email_data
     except HttpError as error:
-        logger.error(f"An error occurred: {error}")
-        st.error(f"An error occurred: {error}")
+        logger.error(f"Error fetching emails: {error}")
+        st.error(f"Error fetching emails: {error}")
         return []
 
-# Display emails
-def display_emails(emails):
-    if not emails:
-        st.write("No emails found.")
-        return
-
-    st.subheader("Emails Found:")
-    for email in emails:
-        st.write(f"**Subject:** {email['Subject']}")
-        st.write(f"**Snippet:** {email['Snippet']}")
-        st.markdown("---")
-
-# Analyze emails with OpenAI
+# Function to analyze emails with AI
 def analyze_emails_with_ai(emails):
+    st.subheader("AI Analysis of Emails")
     if not emails:
         st.write("No emails to analyze.")
         return
 
     try:
-        st.subheader("AI Analysis of Emails")
-        email_snippets = [email['Snippet'] for email in emails]
-        prompt = (
-            "You are an AI assistant. Summarize the following email snippets, "
-            "organize them by topic, and provide key insights:\n\n" +
-            "\n\n".join(email_snippets)
-        )
+        email_texts = [f"Subject: {email['Subject']}\nSnippet: {email['Snippet']}" for email in emails]
+        input_text = "\n\n".join(email_texts)
 
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": "You are an assistant helping to summarize emails."},
+                {"role": "user", "content": input_text},
             ],
-            max_tokens=500,
-            temperature=0.7,
         )
-
-        ai_summary = response['choices'][0]['message']['content']
-        st.write(ai_summary)
-
-    except openai.error.OpenAIError as e:
+        summary = response["choices"][0]["message"]["content"]
+        st.write(summary)
+    except openai.OpenAIError as e:
         logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails with OpenAI: {e}")
+
+# Function to display emails
+def display_emails(emails):
+    if not emails:
+        st.write("No emails found.")
+        return
+    st.subheader("Emails Found:")
+    for email in emails:
+        st.write(f"**Subject:** {email['Subject']}")
+        st.write(f"**Snippet:** {email['Snippet']}")
+        st.markdown("---")
 
 # Main function
 def main():
