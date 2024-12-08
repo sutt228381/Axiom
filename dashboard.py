@@ -4,8 +4,8 @@ import streamlit as st
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import logging
 import openai
+import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
-# OpenAI API Key
-openai.api_key = st.secrets["openai_api_key"]
-
+# Create client_secrets.json dynamically
 def create_client_secrets_file():
     try:
         client_secrets = {
@@ -38,6 +36,7 @@ def create_client_secrets_file():
         logger.error(f"Error creating client_secrets.json: {e}")
         st.error(f"Error creating client_secrets.json: {e}")
 
+# Load token from file
 def load_token():
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE, "r") as token_file:
@@ -45,6 +44,7 @@ def load_token():
             return json.load(token_file)
     return None
 
+# Authenticate user
 def authenticate_user():
     create_client_secrets_file()
     token_data = load_token()
@@ -67,7 +67,6 @@ def authenticate_user():
         auth_url, _ = flow.authorization_url(prompt="consent")
         st.write(f"[Click here to authenticate]({auth_url})")
 
-        # Wait for user to authenticate
         code = st.experimental_get_query_params().get("code")
         if code:
             flow.fetch_token(code=code[0])
@@ -81,6 +80,7 @@ def authenticate_user():
         st.error(f"Error during Gmail authentication: {e}")
         return None
 
+# Fetch emails based on query
 def fetch_emails(service, query):
     try:
         results = service.users().messages().list(userId="me", q=query, maxResults=10).execute()
@@ -100,6 +100,7 @@ def fetch_emails(service, query):
         st.error(f"An error occurred: {error}")
         return []
 
+# Display emails
 def display_emails(emails):
     if not emails:
         st.write("No emails found.")
@@ -111,30 +112,39 @@ def display_emails(emails):
         st.write(f"**Snippet:** {email['Snippet']}")
         st.markdown("---")
 
+# Analyze emails with OpenAI
 def analyze_emails_with_ai(emails):
-    try:
-        if not emails:
-            st.write("No emails found to analyze.")
-            return
+    if not emails:
+        st.write("No emails to analyze.")
+        return
 
+    try:
         st.subheader("AI Analysis of Emails")
-        email_texts = "\n".join([email["Snippet"] for email in emails])
-        
+        email_snippets = [email['Snippet'] for email in emails]
+        prompt = (
+            "You are an AI assistant. Summarize the following email snippets, "
+            "organize them by topic, and provide key insights:\n\n" +
+            "\n\n".join(email_snippets)
+        )
+
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an email summarization assistant."},
-                {"role": "user", "content": f"Summarize the following emails:\n\n{email_texts}"}
-            ]
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=500,
+            temperature=0.7,
         )
 
-        ai_summary = response["choices"][0]["message"]["content"]
+        ai_summary = response['choices'][0]['message']['content']
         st.write(ai_summary)
 
-    except openai.OpenAIError as e:
+    except openai.error.OpenAIError as e:
         logger.error(f"Error analyzing emails with OpenAI: {e}")
         st.error(f"Error analyzing emails with OpenAI: {e}")
 
+# Main function
 def main():
     st.title("AI-Powered Gmail Dashboard")
     st.write("Authenticate and analyze your Gmail inbox.")
